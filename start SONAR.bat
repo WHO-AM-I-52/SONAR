@@ -14,7 +14,7 @@ set "APP_DIR=%~dp0"
 set "PYTHON="
 set "SITEPKG="
 
-:: ── Автопоиск python.exe ──────────────────────────────────────
+:: ── [1] Поиск Python рядом (WPy\ в папке LandApp) ────────────
 for /d %%A in ("%APP_DIR%WPy\python-*.amd64") do (
   if exist "%%A\python.exe" (
     set "PYTHON=%%A\python.exe"
@@ -22,16 +22,34 @@ for /d %%A in ("%APP_DIR%WPy\python-*.amd64") do (
   )
 )
 
+:: ── [2] Fallback: ищем Python в LandApp.bacup ────────────────
+if not defined PYTHON (
+  for /d %%A in ("%APP_DIR%..\LandApp.bacup\WPy\python-*.amd64") do (
+    if exist "%%A\python.exe" (
+      set "PYTHON=%%A\python.exe"
+      set "SITEPKG=%%A\Lib\site-packages"
+      echo  [INFO] Python найден в LandApp.bacup ^(fallback режим^)
+    )
+  )
+)
+
+:: ── [3] TODO: в будущем — install.bat скачает WPy автоматически
+::    if not defined PYTHON call "%APP_DIR%install.bat"
+
+:: ── Если Python так и не найден ─────────────────────────────
 if not defined PYTHON (
   echo.
-  echo [ERROR] Python not found in WPy\python-*.amd64\
-  echo Check that WinPython is installed in the WPy\ folder next to this bat.
+  echo  [ERROR] Python не найден!
+  echo.
+  echo  Варианты решения:
+  echo    1. Скопируй WPy\ из LandApp.bacup в папку рядом с этим файлом
+  echo    2. Запусти install.bat ^(появится в будущей версии^)
   echo.
   pause
   exit /b 1
 )
 
-echo OK: %PYTHON%
+echo  OK: %PYTHON%
 echo.
 
 :: ── Очистка старых .pth ─────────────────────────────────────
@@ -137,7 +155,7 @@ echo  Network: http://%ip%:5000
 echo ============================================
 echo.
 
-:: ── Запуск сервера в этой же консоли ───────────────────
+:: ── Запуск сервера ───────────────────────────────────────
 :start_server
 echo Server is running... Press Ctrl+C to stop.
 echo.
