@@ -66,18 +66,14 @@
 
     /* ════════════════════════════════════════════════════════════
        SIDEBAR — БОКОВОЕ МЕНЮ
-       CSS-переменные управляют шириной и высотой топбара.
-       body.sb-col  → меню свёрнуто (только иконки)
-       body.sb-open → меню открыто (мобильный оверлей)
        ════════════════════════════════════════════════════════════ */
     :root {
-      --sb-width:220px;    /* ширина развёрнутого меню */
-      --sb-col:56px;       /* ширина свёрнутого меню (только иконки) */
-      --topbar-h:48px;     /* высота топбара */
+      --sb-width:220px;
+      --sb-col:56px;
+      --topbar-h:48px;
     }
     body { overflow-x:hidden; }
 
-    /* Топбар — фиксированная шапка */
     .topbar {
       position:fixed; top:0; left:0; right:0; height:var(--topbar-h);
       background:#1B5E7B; z-index:1050;
@@ -90,7 +86,6 @@
       text-decoration:none; display:flex; align-items:center; gap:6px;
     }
 
-    /* Кнопка сворачивания сайдбара */
     .sb-toggle {
       background:none; border:none; color:#fff;
       font-size:20px; cursor:pointer; padding:4px 6px;
@@ -99,7 +94,6 @@
     .sb-toggle:hover { background:rgba(255,255,255,.15); }
     .topbar-right { margin-left:auto; display:flex; align-items:center; gap:8px; }
 
-    /* Дропдаун пользователя в топбаре */
     .topbar .dropdown-toggle {
       background:rgba(255,193,7,.25); border-radius:6px;
       padding:4px 10px; color:#fff; text-decoration:none;
@@ -107,7 +101,6 @@
     }
     .topbar .dropdown-toggle:hover { background:rgba(255,193,7,.4); }
 
-    /* Боковое меню */
     .sidebar {
       position:fixed; top:var(--topbar-h); left:0; bottom:0;
       width:var(--sb-width); background:#1B5E7B; z-index:1040;
@@ -116,12 +109,10 @@
     }
     body.sb-col .sidebar { width:var(--sb-col); }
 
-    /* Прокручиваемая область меню */
     .sb-nav {
       flex:1; overflow-y:auto; overflow-x:hidden; padding:8px 0;
     }
 
-    /* Ссылка в меню */
     .sb-link {
       display:flex; align-items:center; gap:10px;
       padding:9px 16px; color:rgba(255,255,255,.85);
@@ -135,11 +126,9 @@
     }
     .sb-link i { font-size:16px; flex-shrink:0; width:20px; text-align:center; }
 
-    /* Текстовый лейбл — скрывается при свёрнутом меню */
     .sb-lbl { transition:opacity .2s; }
     body.sb-col .sb-lbl { opacity:0; pointer-events:none; }
 
-    /* Разделитель, категория, бейдж счётчика */
     .sb-sep { height:1px; background:rgba(255,255,255,.1); margin:6px 12px; }
     .sb-cat {
       font-size:10px; font-weight:700; letter-spacing:1.5px;
@@ -154,23 +143,19 @@
     }
     body.sb-col .sb-badge { opacity:0; }
 
-    /* Контентная область — отступ под топбар и боковое меню */
     .page-wrap {
       margin-top:var(--topbar-h); margin-left:var(--sb-width);
       transition:margin-left .25s ease;
     }
     body.sb-col .page-wrap { margin-left:var(--sb-col); }
 
-    /* Flash-сообщения учитывают высоту топбара */
     .flash-msg { top:calc(var(--topbar-h) + 12px) !important; }
 
-    /* Полупрозрачный оверлей для мобильного меню */
     .sb-overlay {
       display:none; position:fixed; inset:0;
       background:rgba(0,0,0,.4); z-index:1035;
     }
 
-    /* МОБИЛЬНЫЙ РЕЖИМ: меню скрыто, появляется по кнопке */
     @media(max-width:768px){
       .sidebar {
         transform:translateX(-100%);
@@ -183,8 +168,7 @@
     }
 
     /* ════════════════════════════════════════════════════════════
-       CSS-ПЕРЕМЕННЫЕ ТЁМНОЙ/СВЕТЛОЙ ТЕМЫ
-       data-theme="dark" на body активирует тёмный режим
+       ТЁМНАЯ/СВЕТЛАЯ ТЕМА
        ════════════════════════════════════════════════════════════ */
     :root {
       --bg:#f4f7fa;
@@ -213,7 +197,6 @@
       --table-hover:#252a40;
     }
 
-    /* Применяем переменные к компонентам */
     body { background:var(--bg) !important; color:var(--text) !important; transition:background .2s,color .2s; }
     .card { background:var(--surface) !important; box-shadow:var(--card-shadow) !important; color:var(--text) !important; }
     .modal-content, .dropdown-menu { background:var(--surface) !important; color:var(--text) !important; border-color:var(--border) !important; }
@@ -236,7 +219,6 @@
     hr, .dropdown-divider { border-color:var(--border) !important; }
     .page-wrap { background:var(--bg); }
 
-    /* Кнопка переключения темы в сайдбаре */
     .theme-toggle-btn {
       display:flex; align-items:center; gap:10px; padding:10px 16px;
       color:rgba(255,255,255,.7); background:none; border:none;
@@ -247,7 +229,6 @@
     .theme-toggle-btn i { font-size:16px; width:20px; text-align:center; }
     body.sb-col .theme-toggle-btn .sb-lbl { opacity:0; pointer-events:none; }
 
-    /* ────── Дополнительные фиксы тёмной темы ────── */
     body[data-theme="dark"] * { color: inherit; }
     body[data-theme="dark"] h1, body[data-theme="dark"] h2,
     body[data-theme="dark"] h3, body[data-theme="dark"] h4,
@@ -287,8 +268,6 @@
 
     /* ════════════════════════════════════════════════════════════
        БАННЕР "СОЕДИНЕНИЕ ПОТЕРЯНО"
-       Появляется поверх страницы когда /ping не отвечает.
-       Скрывается автоматически при восстановлении соединения.
        ════════════════════════════════════════════════════════════ */
     #offlineBanner {
       display:none;
@@ -306,24 +285,15 @@
       display:flex; align-items:center; justify-content:center;
       gap:14px; padding:14px 24px; flex-wrap:wrap; text-align:center;
     }
-    #offlineBanner .ob-icon {
-      font-size:28px; animation:obPulse 1.5s infinite;
-    }
-    @keyframes obPulse {
-      0%,100% { opacity:1; } 50% { opacity:.4; }
-    }
-    #offlineBanner .ob-title {
-      font-size:16px; font-weight:700; letter-spacing:.3px;
-    }
-    #offlineBanner .ob-sub {
-      font-size:12px; opacity:.85; margin-top:2px;
-    }
+    #offlineBanner .ob-icon { font-size:28px; animation:obPulse 1.5s infinite; }
+    @keyframes obPulse { 0%,100% { opacity:1; } 50% { opacity:.4; } }
+    #offlineBanner .ob-title { font-size:16px; font-weight:700; letter-spacing:.3px; }
+    #offlineBanner .ob-sub { font-size:12px; opacity:.85; margin-top:2px; }
     #offlineBanner .ob-badge {
       background:rgba(255,255,255,.15); border-radius:20px;
       padding:4px 12px; font-size:11px; font-weight:600;
       letter-spacing:.5px; animation:obPulse 2s infinite;
     }
-    /* Страница при потере соединения затемняется */
     body.offline-mode .page-wrap,
     body.offline-mode .sidebar { filter:blur(1px) brightness(.7); pointer-events:none; }
     body.offline-mode .topbar { filter:brightness(.7); pointer-events:none; }
@@ -331,10 +301,6 @@
 </head>
 <body>
 
-{# ═══════════════════════════════════════════════════════════════
-   БАННЕР "СОЕДИНЕНИЕ ПОТЕРЯНО"
-   Скрыт по умолчанию. JS ниже управляет видимостью.
-═══════════════════════════════════════════════════════════════ #}
 <div id="offlineBanner">
   <div class="ob-inner">
     <div class="ob-icon">⚠️</div>
@@ -350,27 +316,16 @@
   </div>
 </div>
 
-{# ═══════════════════════════════════════════════════════════════
-   ТОПБАР — фиксированная верхняя панель
-   Содержит: кнопку-гамбургер, логотип, версию,
-             дропдаун пользователя с импersonation
-═══════════════════════════════════════════════════════════════ #}
 <header class="topbar">
-  {# Кнопка сворачивания/разворачивания сайдбара #}
   <button class="sb-toggle" id="sbToggle"><i class="bi bi-list"></i></button>
-
-  {# Логотип и версия #}
   <a href="/" class="topbar-brand">
     <i class="bi bi-map"></i> Подбор ЗУ
     <span style="font-size:10px;opacity:.7;font-weight:400" class="ms-1">v{{ app_version }}</span>
   </a>
-
-  {# Правая часть топбара — меню пользователя #}
   <div class="topbar-right">
     {% if 'user_id' in session %}
     <div class="dropdown">
       <a href="#" class="dropdown-toggle" data-bs-toggle="dropdown">
-        {# Иконка режима просмотра (импersonation) или обычного пользователя #}
         {% if session.get('is_impersonating') %}<i class="bi bi-eye-fill text-warning"></i>
         {% else %}<i class="bi bi-person-circle"></i>{% endif %}
         {{ session.fullname }}
@@ -381,8 +336,6 @@
         {% endif %}
       </a>
       <ul class="dropdown-menu dropdown-menu-end shadow" style="min-width:230px;font-size:13px">
-
-        {# ─── Режим импersonation (просмотр под другим пользователем) ─── #}
         {% if session.get('is_impersonating') %}
           <li>
             <span class="dropdown-item-text" style="font-size:11px;color:#856404">
@@ -402,15 +355,12 @@
             </a>
           </li>
           <li><hr class="dropdown-divider my-1"></li>
-
         {% else %}
-          {# ─── Обычный режим ─── #}
           <li>
             <span class="dropdown-item-text text-muted" style="font-size:11px">
               <i class="bi bi-person me-1"></i>{{ session.username }}
             </span>
           </li>
-          {# Список пользователей для входа под ними (только для admin) #}
           {% if session.role=='admin' and users_for_impersonate %}
             <li><hr class="dropdown-divider my-1"></li>
             <li>
@@ -429,7 +379,6 @@
           {% endif %}
           <li><hr class="dropdown-divider my-1"></li>
         {% endif %}
-
         <li>
           <a class="dropdown-item text-danger" href="/logout">
             <i class="bi bi-box-arrow-right me-2"></i>Выйти
@@ -441,22 +390,13 @@
   </div>
 </header>
 
-{# ═══════════════════════════════════════════════════════════════
-   ОВЕРЛЕЙ для мобильного меню (клик = закрыть сайдбар)
-═══════════════════════════════════════════════════════════════ #}
 <div class="sb-overlay" id="sbOverlay"
      onclick="document.body.classList.remove('sb-open')"></div>
 
-{# ═══════════════════════════════════════════════════════════════
-   САЙДБАР — боковое меню навигации
-   Показывается только авторизованным пользователям.
-   Разделён на секции: Навигация / Администратор / Настройки
-═══════════════════════════════════════════════════════════════ #}
 {% if 'user_id' in session %}
 <aside class="sidebar">
   <nav class="sb-nav">
 
-    {# ─── Основная навигация ─── #}
     <div class="sb-cat">Навигация</div>
 
     <a href="/" class="sb-link {{ 'active' if request.path=='/' }}">
@@ -464,11 +404,11 @@
     </a>
     <a href="/dashboard" class="sb-link {{ 'active' if request.path=='/dashboard' }}">
       <i class="bi bi-bar-chart-line"></i><span class="sb-lbl">Дашборд</span>
+    </a>
     <a href="/request/new" class="sb-link {{ 'active' if request.path=='/request/new' }}">
       <i class="bi bi-plus-circle"></i><span class="sb-lbl">Новое обращение</span>
     </a>
 
-    {# ─── Телефонный справочник (v2.1.0) ─── #}
     <a href="{{ url_for('phonebook.phonebook') }}"
        class="sb-link {{ 'active' if request.endpoint and request.endpoint.startswith('phonebook') }}">
       <i class="bi bi-telephone-fill"></i><span class="sb-lbl">Справочник</span>
@@ -478,13 +418,11 @@
       <i class="bi bi-bookmark-star"></i><span class="sb-lbl">Фильтры</span>
     </a>
 
-    {# Уведомления — показывает кол-во непрочитанных #}
     <a href="/notifications" class="sb-link {{ 'active' if request.path=='/notifications' }}">
       <i class="bi bi-bell"></i><span class="sb-lbl">Уведомления</span>
       {% if unread_count > 0 %}<span class="sb-badge">{{ unread_count }}</span>{% endif %}
     </a>
 
-    {# ─── Секция администратора (только role=admin) ─── #}
     {% if session.role=='admin' %}
     <div class="sb-sep"></div>
     <div class="sb-cat">Администратор</div>
@@ -496,14 +434,18 @@
     </a>
     {% endif %}
 
-    {# ─── Прочее ─── #}
     <div class="sb-sep"></div>
     <a href="{{ url_for('misc.changelog') }}"
        class="sb-link {{ 'active' if request.path=='/changelog' }}">
       <i class="bi bi-journal-text"></i><span class="sb-lbl">Версии</span>
     </a>
 
-    {# ─── Переключатель тёмной темы ─── #}
+    {# ─── GitHub ─── #}
+    <a href="https://github.com/WHO-AM-I-52/SONAR" target="_blank" rel="noopener noreferrer"
+       class="sb-link">
+      <i class="bi bi-github"></i><span class="sb-lbl">GitHub</span>
+    </a>
+
     <div class="sb-sep"></div>
     <button class="theme-toggle-btn" id="themeToggle" title="Сменить тему">
       <i class="bi bi-moon-stars-fill" id="themeIcon"></i>
@@ -515,11 +457,6 @@
 {% endif %}
 
 
-{# ═══════════════════════════════════════════════════════════════
-   FLASH-СООБЩЕНИЯ
-   Выводятся после любого серверного действия (success/error/warning)
-   Автоматически закрываются через Bootstrap
-═══════════════════════════════════════════════════════════════ #}
 {% with messages = get_flashed_messages(with_categories=true) %}
 {% if messages %}
 <div class="flash-msg">
@@ -538,9 +475,6 @@
 {% endwith %}
 
 
-{# ═══════════════════════════════════════════════════════════════
-   ОСНОВНОЙ КОНТЕНТ — подставляется из дочерних шаблонов
-═══════════════════════════════════════════════════════════════ #}
 <div class="page-wrap">
   <main class="main-content">
     {% block content %}{% endblock %}
@@ -548,7 +482,6 @@
 </div>
 
 
-{# ─── Bootstrap JS ─── #}
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 {% block scripts %}{% endblock %}
 
@@ -572,14 +505,20 @@
     </svg>
     Telegram
   </a>
+  &nbsp;&nbsp;
+  <a href="https://github.com/WHO-AM-I-52/SONAR" target="_blank" rel="noopener noreferrer"
+     title="Исходный код на GitHub"
+     style="color:#1B5E7B;text-decoration:none;font-weight:600">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
+         viewBox="0 0 24 24" fill="#1B5E7B"
+         style="vertical-align:middle;margin-bottom:2px">
+      <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0 1 12 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/>
+    </svg>
+    GitHub
+  </a>
 </footer>
 
 
-{# ═══════════════════════════════════════════════════════════════
-   JS: САЙДБАР — запоминает состояние в localStorage
-   sb_col='1' → меню свёрнуто
-   Мобиль: класс sb-open вместо sb-col
-═══════════════════════════════════════════════════════════════ #}
 <script>
 (function(){
   var b = document.body;
@@ -596,16 +535,9 @@
 </script>
 
 
-{# ═══════════════════════════════════════════════════════════════
-   JS: ТЁМНАЯ/СВЕТЛАЯ ТЕМА
-   Применяется до рендера (в head) чтобы не было мигания.
-   Хранится в localStorage['app_theme']
-═══════════════════════════════════════════════════════════════ #}
 <script>
 (function(){
   var KEY = 'app_theme', DARK = 'dark';
-
-  /* Применяем тему сразу — предотвращает "мигание" при загрузке */
   if (localStorage.getItem(KEY) === DARK)
     document.body.setAttribute('data-theme', DARK);
 
@@ -637,22 +569,15 @@
 </script>
 
 
-{# ═══════════════════════════════════════════════════════════════
-   JS: БАННЕР "СОЕДИНЕНИЕ ПОТЕРЯНО"
-   Каждые 10 секунд делает fetch на /ping.
-   Если сервер не ответил — показывает баннер и затемняет интерфейс.
-   При восстановлении — скрывает баннер автоматически.
-   Маршрут /ping нужно добавить в info_routes.py (см. ниже).
-═══════════════════════════════════════════════════════════════ #}
 <script>
 (function(){
   var banner   = document.getElementById('offlineBanner');
   var body     = document.body;
   var offline  = false;
-  var INTERVAL = 10000; /* пинг каждые 10 секунд */
+  var INTERVAL = 10000;
 
   function setOffline(state){
-    if (state === offline) return; /* не перерисовываем если статус не изменился */
+    if (state === offline) return;
     offline = state;
     if (state){
       banner.style.display = 'block';
@@ -664,20 +589,11 @@
   }
 
   function ping(){
-    fetch('/ping', {
-      method: 'GET',
-      cache: 'no-store',
-      credentials: 'same-origin'
-    })
-    .then(function(r){
-      setOffline(!r.ok); /* сервер ответил, но вернул ошибку — тоже offline */
-    })
-    .catch(function(){
-      setOffline(true);  /* сервер не ответил */
-    });
+    fetch('/ping', { method:'GET', cache:'no-store', credentials:'same-origin' })
+    .then(function(r){ setOffline(!r.ok); })
+    .catch(function(){ setOffline(true); });
   }
 
-  /* Первый пинг через 5 сек после загрузки, затем каждые 10 сек */
   setTimeout(function(){
     ping();
     setInterval(ping, INTERVAL);
@@ -686,12 +602,6 @@
 </script>
 
 
-{# ═══════════════════════════════════════════════════════════════
-   DRONE AUTOSAVE WIDGET
-   Анимированный виджет автосохранения.
-   Срабатывает каждые 60 секунд, делает POST /autosave.
-   Показывается только на страницах с формами.
-═══════════════════════════════════════════════════════════════ #}
 <div id="droneWidget" style="
   position:fixed; right:24px; bottom:24px; z-index:9999;
   opacity:0; transform:scale(0.8);
@@ -740,7 +650,6 @@
 </div>
 
 <style>
-/* ── Drone Widget Styles (без изменений) ── */
 #droneWidget .demo { position:relative; width:220px; height:52px; padding-left:60px; padding-right:12px; border-radius:10px; background:#61d4f1; transition:background-color 1s; cursor:pointer; box-shadow:0 4px 20px rgba(0,0,0,0.2); }
 #droneWidget .demo:before, #droneWidget .demo:after { content:""; position:absolute; left:5%; bottom:100%; width:14%; height:6px; background:#3dc1da; transform:scaleX(0); transform-origin:0 100%; }
 #droneWidget .demo:after { left:19%; width:66%; }
@@ -826,7 +735,6 @@
     widget.style.transform    = 'scale(1)';
     widget.style.pointerEvents= 'auto';
 
-    /* Отправляем пинг автосохранения */
     fetch('/autosave', { method:'POST', credentials:'same-origin' })
       .catch(function(e){ console.warn('Autosave error:', e); });
 
@@ -855,11 +763,9 @@
     }, 10000);
   }
 
-  /* Автосохранение каждые 60 секунд */
   setInterval(triggerAnimation, 60000);
 })();
 </script>
-{# ═══ END DRONE AUTOSAVE ═══ #}
 
 </body>
 </html>
