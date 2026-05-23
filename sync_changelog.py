@@ -10,8 +10,27 @@ BRANCH = "main"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CHANGELOG_PATH = os.path.join(BASE_DIR, "changelog.py")
 
+# ── Токен из .env (если есть) ──────────────────────────────────────
+def load_token():
+    env_path = os.path.join(BASE_DIR, ".env")
+    if os.path.exists(env_path):
+        with open(env_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("GITHUB_TOKEN="):
+                    return line.split("=", 1)[1].strip()
+    return None
+
+TOKEN = load_token()
+
+def _headers():
+    h = {"User-Agent": "SONAR-Sync", "Accept": "application/vnd.github+json"}
+    if TOKEN:
+        h["Authorization"] = f"Bearer {TOKEN}"
+    return h
+
 def get_json(url):
-    req = urllib.request.Request(url, headers={"User-Agent": "SONAR-Sync"})
+    req = urllib.request.Request(url, headers=_headers())
     with urllib.request.urlopen(req, timeout=15) as r:
         return json.loads(r.read().decode())
 
@@ -20,10 +39,10 @@ def get_text(url):
     with urllib.request.urlopen(req, timeout=15) as r:
         return r.read().decode("utf-8")
 
-# ── CHANGELOG из GitHub Releases ────────────────────────────
+# ── CHANGELOG из GitHub Releases ─────────────────────────────────
 def fetch_releases():
     data = get_json(
-        f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases"
+        f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases?per_page=100"
     )
     changelog = []
     for r in data:
@@ -42,7 +61,7 @@ def fetch_releases():
         changelog.append({"version": version, "date": date, "changes": changes})
     return changelog
 
-# ── ROADMAP из ROADMAP.md ────────────────────────────────────
+# ── ROADMAP из ROADMAP.md ──────────────────────────────────────
 def fetch_roadmap():
     url = (f"https://raw.githubusercontent.com/"
            f"{REPO_OWNER}/{REPO_NAME}/{BRANCH}/ROADMAP.md")
@@ -60,7 +79,6 @@ def fetch_roadmap():
     current_entry = None
 
     for line in content.splitlines():
-        # Секция (## 🔄 В работе)
         if re.match(r"^##\s+", line):
             for key, val in STATUS_MAP.items():
                 if key in line:
@@ -71,7 +89,6 @@ def fetch_roadmap():
                 current_entry = None
             continue
 
-        # Заголовок пункта (### Название)
         title_match = re.match(r"^###\s+(.+)", line)
         if title_match:
             if current_entry:
@@ -85,7 +102,6 @@ def fetch_roadmap():
             }
             continue
 
-        # Пункты списка
         if current_entry and re.match(r"^[-*]\s+", line):
             point = re.sub(r"^[-*]\s+", "", line).strip()
             current_entry["points"].append(point)
@@ -93,11 +109,10 @@ def fetch_roadmap():
     if current_entry:
         roadmap.append(current_entry)
 
-    # Убираем "Реализовано" — она уже в CHANGELOG
     roadmap = [r for r in roadmap if r["status"] != "done"]
     return roadmap
 
-# ── Запись в changelog.py ────────────────────────────────────
+# ── Запись в changelog.py ─────────────────────────────────────────
 def write_changelog(changelog, roadmap):
     lines = ["CHANGELOG = [\n"]
     for entry in changelog:
@@ -128,23 +143,26 @@ def write_changelog(changelog, roadmap):
 
 def main():
     print("  Sinhronizaciya changelog s GitHub...")
+    if TOKEN:
+        print("  Токен найден — лимит 5000 запросов/час")
+    else:
+        print("  Токен не найден — лимит 60 запросов/час")
     try:
         releases = fetch_releases()
         print(f"  Релизов найдено: {len(releases)}")
 
         roadmap = fetch_roadmap()
-        print(f"  ROADMAP zapisej: {len(roadmap)}")
+        print(f"  ROADMAP записей: {len(roadmap)}")
 
-        # Если релизов нет — сохраняем текущий CHANGELOG, обновляем только ROADMAP
         if not releases:
-            print("  [!] Релизов нет — CHANGELOG ne obnovlyaetsya.")
+            print("  [!] Релизов нет — CHANGELOG не обновляется.")
             from changelog import CHANGELOG as existing
             releases = [{"version": e["version"],
                          "date": e["date"],
                          "changes": e["changes"]} for e in existing]
 
         write_changelog(releases, roadmap)
-        print("  changelog.py obnovlen.")
+        print("  changelog.py обновлён.")
     except Exception as e:
         print(f"  [OSHIBKA] {e}")
 
