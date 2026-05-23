@@ -4,13 +4,17 @@ setlocal
 
 :: ============================================================
 ::  SONAR Updater — скачивает последние изменения кода с GitHub
-::  Не трогает: db\, uploads\, reports\, WPy64-31100\
+::  Не трогает: db\, uploads\, reports\, WPy\
 :: ============================================================
 
-set REPO_URL=https://github.com/WHO-AM-I-52/SONAR
-set APP_DIR=%~dp0
-set PYTHON=%APP_DIR%WPy64-31100\WPy64-31241\python-3.12.4.amd64\python.exe
-set UPDATER=%APP_DIR%_updater.py
+set "APP_DIR=%~dp0"
+set "UPDATER=%APP_DIR%_updater.py"
+set "PYTHON="
+
+:: ── Автопоиск python.exe ──────────────────────────────────────
+for /d %%A in ("%APP_DIR%WPy\python-*.amd64") do (
+  if exist "%%A\python.exe" set "PYTHON=%%A\python.exe"
+)
 
 echo.
 echo  ================================================
@@ -18,14 +22,12 @@ echo   SONAR — Обновление кода из GitHub
 echo  ================================================
 echo.
 
-:: Проверяем наличие Python
-if not exist "%PYTHON%" (
-    echo [ОШИБКА] Python не найден: %PYTHON%
-    pause
-    exit /b 1
+if not defined PYTHON (
+  echo [ОШИБКА] Python не найден в WPy\python-*.amd64\
+  pause
+  exit /b 1
 )
 
-:: Запускаем Python-скрипт обновления
 "%PYTHON%" "%UPDATER%"
 
 echo.
