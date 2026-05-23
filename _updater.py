@@ -1,8 +1,10 @@
 import urllib.request
 import urllib.parse
+import urllib.error
 import json
 import os
 import sys
+from datetime import datetime
 
 REPO_OWNER = "WHO-AM-I-52"
 REPO_NAME  = "SONAR"
@@ -12,15 +14,36 @@ API_BASE   = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}"
 
 BAT_NAME = "start SONAR.bat"
 
-# Папки и файлы, которые НЕ трогаем
 PROTECTED = {"db", "uploads", "reports", "WPy", "Bacup",
              "_updater.py", "update.bat", ".env",
              "database.db", "database.db-shm", "database.db-wal"}
 
+# ── Токен из .env ─────────────────────────────────────────────
+def load_token():
+    env_path = os.path.join(BASE_DIR, ".env")
+    if os.path.exists(env_path):
+        with open(env_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("GITHUB_TOKEN="):
+                    return line.split("=", 1)[1].strip()
+    return None
+
+TOKEN = load_token()
+
+def _headers():
+    h = {"User-Agent": "SONAR-Updater", "Accept": "application/vnd.github+json"}
+    if TOKEN:
+        h["Authorization"] = f"Bearer {TOKEN}"
+    return h
+
+# ── HTTP запросы ───────────────────────────────────────────
 def get_json(url):
-    req = urllib.request.Request(url, headers={"User-Agent": "SONAR-Updater"})
+    req = urllib.request.Request(url, headers=_headers())
     with urllib.request.urlopen(req, timeout=15) as r:
-        return json.loads(r.read().decode())
+        data = json.loads(r.read().decode())
+        show_rate_limit(r.headers)
+        return data
 
 def fetch_raw(url):
     req = urllib.request.Request(url, headers={"User-Agent": "SONAR-Updater"})
@@ -28,7 +51,6 @@ def fetch_raw(url):
         return r.read()
 
 def make_raw_url(path):
-    """URL с кодированием пробелов и спецсимволов в имени файла"""
     encoded = urllib.parse.quote(path, safe="/")
     return (f"https://raw.githubusercontent.com/"
             f"{REPO_OWNER}/{REPO_NAME}/{BRANCH}/{encoded}")
@@ -43,10 +65,46 @@ def get_tree():
     data = get_json(f"{API_BASE}/git/trees/{BRANCH}?recursive=1")
     return data.get("tree", [])
 
+# ── Отображение лимита ──────────────────────────────────────
+def show_rate_limit(headers):
+    remaining = headers.get("X-RateLimit-Remaining")
+    limit     = headers.get("X-RateLimit-Limit")
+    reset_ts  = headers.get("X-RateLimit-Reset")
+    if remaining is None:
+        return
+    reset_str = ""
+    if reset_ts:
+        try:
+            reset_str = datetime.fromtimestamp(int(reset_ts)).strftime("%H:%M")
+        except Exception:
+            pass
+    print(f"  Лимит API: {remaining}/{limit} осталось" +
+          (f" (сброс в {reset_str})" if reset_str else ""))
+
+# ── Главная логика ────────────────────────────────────────────
 def main():
     print("  Подключаемся к GitHub...")
+    if TOKEN:
+        print("  Токен найден — лимит 5000 запросов/час")
+    else:
+        print("  Токен не найден — лимит 60 запросов/час")
+
     try:
         tree = get_tree()
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            reset_ts = e.headers.get("X-RateLimit-Reset")
+            reset_str = ""
+            if reset_ts:
+                try:
+                    reset_str = datetime.fromtimestamp(int(reset_ts)).strftime("%H:%M")
+                except Exception:
+                    pass
+            print(f"  [ОШИБКА] Rate limit исчерпан." +
+                  (f" Сброс в {reset_str}." if reset_str else " Подожди и повтори."))
+        else:
+            print(f"  [ОШИБКА] {e}")
+        sys.exit(1)
     except Exception as e:
         print(f"  [ОШИБКа] Не удалось получить данные с GitHub: {e}")
         sys.exit(1)
