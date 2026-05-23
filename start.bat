@@ -44,6 +44,16 @@ echo.
 "%PYTHON%" -c "import os,glob;files=sorted(glob.glob('db/backups/database_*.db'));[os.remove(f) for f in files[:-5]];print('Backups kept: '+str(min(len(files),5)))"
 echo.
 
+:: ── Обновление кода из GitHub ──────────────────────────────
+if exist "%APP_DIR%update.bat" (
+  set /p UPD=Obnovit kod iz GitHub? [Enter = da / 0 = net]: 
+  if not "%UPD%"=="0" (
+    echo.
+    call "%APP_DIR%update.bat"
+    echo.
+  )
+)
+
 :: ── Sync changelog + roadmap ────────────────────────────────
 set /p SYNC=Sync changelog s GitHub? [Enter = da / 0 = net]: 
 if not "%SYNC%"=="0" (
@@ -60,7 +70,7 @@ for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /i "IPv4"') do (
 :found
 set ip=%ip: =%
 
-:: ── Запускаем сервер — адреса покажет сам Flask ─────────────
+:: ── Запускаем сервер ────────────────────────────────────────
 echo Starting server...
 echo.
 echo ============================================
