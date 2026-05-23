@@ -1,3 +1,8 @@
 flask
 openpyxl
 werkzeug
+python-docx
+pytesseract
+Pillow
+requests
+python-dotenv
