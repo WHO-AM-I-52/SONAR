@@ -28,7 +28,7 @@ if not defined PYTHON (
     if exist "%%A\python.exe" (
       set "PYTHON=%%A\python.exe"
       set "SITEPKG=%%A\Lib\site-packages"
-      echo  [INFO] Python nayden v LandApp.bacup (fallback)
+      echo  [INFO] Python nayden v LandApp.bacup ^(fallback^)
     )
   )
 )
@@ -42,7 +42,7 @@ if not defined PYTHON (
   echo.
   echo  Varianty resheniya:
   echo    1. Skopiruy WPy\ iz LandApp.bacup v papku ryadom s etim faylom
-  echo    2. Zapusti install.bat (poyavitsya v budushchey versii)
+  echo    2. Zapusti install.bat ^(poyavitsya v budushchey versii^)
   echo.
   pause
   exit /b 1
