@@ -2,68 +2,70 @@
 chcp 65001 >nul
 setlocal
 
-echo ╔══════════════════════════════════════════════════╗
-echo ║         Копирование данных в LandApp             ║
-echo ╚══════════════════════════════════════════════════╝
+echo ================================================
+echo   Kopirovaniye dannykh v LandApp
+echo ================================================
 echo.
 
-:: ── Пути ────────────────────────────────────────────────────
 set "SRC=%~dp0..\LandApp.bacup"
 set "DST=%~dp0"
 
-:: Проверяем что папка-источник существует
 if not exist "%SRC%" (
-    echo  [ОШИБКА] Папка LandApp.bacup не найдена по пути:
-    echo           %SRC%
+    echo [OSHIBKA] Papka LandApp.bacup ne naydena:
+    echo          %SRC%
     echo.
-    echo  Убедись что LandApp и LandApp.bacup лежат рядом.
+    echo Ubedis chto LandApp i LandApp.bacup lezhat ryadom.
     pause
     exit /b 1
 )
 
-echo  Источник : %SRC%
-echo  Назначение: %DST%
+echo Istochnik : %SRC%
+echo Naznacheniye: %DST%
 echo.
 
-:: ── .env ────────────────────────────────────────────────────
-echo  Копирую .env...
+:: -- .env
+echo Kopiruju .env...
 if exist "%SRC%\.env" (
     copy /Y "%SRC%\.env" "%DST%\.env" >nul
-    echo  [OK] .env
+    echo [OK] .env
 ) else (
-    echo  [--] .env не найден в источнике — пропуск
+    echo [--] .env ne nayden -- propusk
 )
 
-:: ── database.db ─────────────────────────────────────────────
-echo  Копирую database.db...
+:: -- database.db -> db\database.db
+echo Kopiruju database.db...
+if not exist "%DST%db" mkdir "%DST%db"
 if exist "%SRC%\database.db" (
-    copy /Y "%SRC%\database.db" "%DST%\database.db" >nul
-    echo  [OK] database.db
+    copy /Y "%SRC%\database.db" "%DST%db\database.db" >nul
+    echo [OK] database.db -> db\database.db
+) else if exist "%SRC%\db\database.db" (
+    copy /Y "%SRC%\db\database.db" "%DST%db\database.db" >nul
+    echo [OK] db\database.db -> db\database.db
 ) else (
-    echo  [--] database.db не найден — пропуск
+    echo [--] database.db ne nayden -- propusk
 )
 
-:: ── uploads\ ────────────────────────────────────────────────
-echo  Копирую uploads\...
+:: -- uploads\
+echo Kopiruju uploads\...
 if exist "%SRC%\uploads" (
-    xcopy /E /I /Y /Q "%SRC%\uploads" "%DST%\uploads" >nul
-    echo  [OK] uploads\
+    xcopy /E /I /Y /Q "%SRC%\uploads" "%DST%uploads" >nul
+    echo [OK] uploads\
 ) else (
-    echo  [--] uploads\ не найден — пропуск
+    echo [--] uploads\ ne nayden -- propusk
 )
 
-:: ── reports\ ────────────────────────────────────────────────
-echo  Копирую reports\...
+:: -- reports\
+echo Kopiruju reports\...
 if exist "%SRC%\reports" (
-    xcopy /E /I /Y /Q "%SRC%\reports" "%DST%\reports" >nul
-    echo  [OK] reports\
+    xcopy /E /I /Y /Q "%SRC%\reports" "%DST%reports" >nul
+    echo [OK] reports\
 ) else (
-    echo  [--] reports\ не найден — пропуск
+    echo [--] reports\ ne nayden -- propusk
 )
 
 echo.
-echo ══════════════════════════════════════════════════
-echo  Готово! Теперь можно запускать start SONAR.bat
-echo ══════════════════════════════════════════════════
+echo ================================================
+echo  Gotovo! Teper mozhno zapuskat start SONAR.bat
+echo ================================================
 echo.
 pause
