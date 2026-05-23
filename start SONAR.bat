@@ -14,19 +14,17 @@ set "APP_DIR=%~dp0"
 set "PYTHON="
 set "SITEPKG="
 
-:: ── Автопоиск python.exe в WPy\ ────────────────────────────────
-for /d %%A in ("%APP_DIR%WPy\WPy*") do (
-  for /d %%B in ("%%A\python-*.amd64") do (
-    if exist "%%B\python.exe" (
-      set "PYTHON=%%B\python.exe"
-      set "SITEPKG=%%B\Lib\site-packages"
-    )
+:: ── Автопоиск python.exe в WPy\python-*.amd64\ ────────────────────
+for /d %%A in ("%APP_DIR%WPy\python-*.amd64") do (
+  if exist "%%A\python.exe" (
+    set "PYTHON=%%A\python.exe"
+    set "SITEPKG=%%A\Lib\site-packages"
   )
 )
 
 if not defined PYTHON (
   echo.
-  echo [ERROR] Python not found in WPy\WPy*\python-*.amd64\
+  echo [ERROR] Python not found in WPy\python-*.amd64\
   echo Check that WinPython is installed in the WPy\ folder next to this bat.
   echo.
   pause
