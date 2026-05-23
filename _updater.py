@@ -37,13 +37,26 @@ def _headers():
         h["Authorization"] = f"Bearer {TOKEN}"
     return h
 
-# ── HTTP запросы ───────────────────────────────────────────
+# ── HTTP запросы ────────────────────────────────────────────
 def get_json(url):
     req = urllib.request.Request(url, headers=_headers())
     with urllib.request.urlopen(req, timeout=15) as r:
         data = json.loads(r.read().decode())
         show_rate_limit(r.headers)
         return data
+
+def post_json(url, payload):
+    """POST-запрос с JSON-телом, возвращает (status_code, response_dict)."""
+    body = json.dumps(payload).encode("utf-8")
+    req  = urllib.request.Request(
+        url, data=body, headers={**_headers(), "Content-Type": "application/json"},
+        method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return r.status, json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read().decode())
 
 def fetch_raw(url):
     req = urllib.request.Request(url, headers={"User-Agent": "SONAR-Updater"})
@@ -65,7 +78,7 @@ def get_tree():
     data = get_json(f"{API_BASE}/git/trees/{BRANCH}?recursive=1")
     return data.get("tree", [])
 
-# ── Отображение лимита ──────────────────────────────────────
+# ── Отображение лимита ─────────────────────────────────────────
 def show_rate_limit(headers):
     remaining = headers.get("X-RateLimit-Remaining")
     limit     = headers.get("X-RateLimit-Limit")
@@ -81,6 +94,82 @@ def show_rate_limit(headers):
     print(f"  Лимит API: {remaining}/{limit} осталось" +
           (f" (сброс в {reset_str})" if reset_str else ""))
 
+# ── Чтение changelog.py ────────────────────────────────────
+def load_changelog():
+    """
+    Импортирует CHANGELOG из локального changelog.py после обновления.
+    Возвращает (version, body) или (None, None) если не удалось.
+    """
+    changelog_path = os.path.join(BASE_DIR, "changelog.py")
+    if not os.path.exists(changelog_path):
+        return None, None
+    try:
+        ns = {}
+        with open(changelog_path, encoding="utf-8") as f:
+            exec(f.read(), ns)
+        cl = ns.get("CHANGELOG", [])
+        if not cl:
+            return None, None
+        latest = cl[0]
+        version = latest.get("version", "")
+        changes = latest.get("changes", [])
+        body = "\n".join(f"- {c}" for c in changes)
+        return version, body
+    except Exception as e:
+        print(f"  [Внимание] Не удалось прочитать changelog.py: {e}")
+        return None, None
+
+# ── Автосоздание GitHub Release ────────────────────────────
+def ensure_github_release():
+    """
+    Читает версию из локального changelog.py.
+    Если релиз с таким тегом ещё не существует — создаёт его.
+    Требует GITHUB_TOKEN в .env (push-права).
+    """
+    if not TOKEN:
+        print("  [Релиз] Токен не найден — автосоздание релиза пропущено.")
+        return
+
+    version, body = load_changelog()
+    if not version:
+        print("  [Релиз] Не удалось определить версию — пропуск.")
+        return
+
+    tag = f"v{version}"
+
+    # Проверяем, существует ли уже такой релиз
+    try:
+        req = urllib.request.Request(
+            f"{API_BASE}/releases/tags/{tag}",
+            headers=_headers()
+        )
+        with urllib.request.urlopen(req, timeout=15):
+            print(f"  [Релиз] {tag} уже существует — пропуск.")
+            return
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            print(f"  [Релиз] Ошибка проверки: {e.code}")
+            return
+        # 404 — релиза нет, создаём
+
+    print(f"  [Релиз] Создаю {tag} на GitHub...")
+    status, resp = post_json(
+        f"{API_BASE}/releases",
+        {
+            "tag_name":         tag,
+            "target_commitish": BRANCH,
+            "name":             tag,
+            "body":             body,
+            "draft":            False,
+            "prerelease":       False,
+        }
+    )
+    if status == 201:
+        print(f"  [Релиз] ✅ {tag} успешно создан: {resp.get('html_url', '')}")
+    else:
+        msg = resp.get("message", "неизвестная ошибка")
+        print(f"  [Релиз] ⚠️ Не удалось создать {tag}: {msg}")
+
 # ── Главная логика ────────────────────────────────────────────
 def main():
     print("  Подключаемся к GitHub...")
@@ -93,7 +182,7 @@ def main():
         tree = get_tree()
     except urllib.error.HTTPError as e:
         if e.code == 403:
-            reset_ts = e.headers.get("X-RateLimit-Reset")
+            reset_ts  = e.headers.get("X-RateLimit-Reset")
             reset_str = ""
             if reset_ts:
                 try:
@@ -153,6 +242,11 @@ def main():
     print()
     print(f"  Обновлено файлов: {updated}")
     print(f"  Пропущено (защищённые): {skipped}")
+    print()
+
+    # ── Автосоздание GitHub Release ─────────────────────────
+    ensure_github_release()
+
     print()
     print("  Обновление завершено. База данных и файлы пользователей не тронуты.")
 
