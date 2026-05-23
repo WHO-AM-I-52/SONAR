@@ -14,7 +14,7 @@ set "APP_DIR=%~dp0"
 set "PYTHON="
 set "SITEPKG="
 
-:: ── Автопоиск python.exe в WPy\python-*.amd64\ ────────────────────
+:: ── Автопоиск python.exe ──────────────────────────────────────
 for /d %%A in ("%APP_DIR%WPy\python-*.amd64") do (
   if exist "%%A\python.exe" (
     set "PYTHON=%%A\python.exe"
@@ -34,7 +34,7 @@ if not defined PYTHON (
 echo OK: %PYTHON%
 echo.
 
-:: ── Очистка старых .pth пакетов ─────────────────────────
+:: ── Очистка старых .pth ─────────────────────────────────────
 echo Cleaning old .pth packages...
 for %%v in (3.5 3.6 3.7 3.8 3.9) do (
   for %%f in ("%SITEPKG%\*-py%%v-nspkg.pth") do (
@@ -45,7 +45,7 @@ del /f /q "%SITEPKG%\distutils-precedence.pth" 2>nul
 echo Done.
 echo.
 
-:: ── Бэкап базы данных ────────────────────────────────────
+:: ── Бэкап базы данных ──────────────────────────────────────
 if not exist db\backups mkdir db\backups
 echo Creating database backup...
 xcopy /Y /I db\database.db "db\backups\database_%date:~6,4%%date:~3,2%%date:~0,2%.db*" >nul
@@ -55,7 +55,7 @@ echo.
 "%PYTHON%" -c "import os,glob;files=sorted(glob.glob('db/backups/database_*.db'));[os.remove(f) for f in files[:-5]];print('Backups kept: '+str(min(len(files),5)))"
 echo.
 
-:: ── Health check ──────────────────────────────────────────
+:: ── Health check ─────────────────────────────────────────────
 echo Running health check...
 "%PYTHON%" -m py_compile app.py
 if errorlevel 1 (
@@ -68,7 +68,7 @@ if errorlevel 1 (
 echo Health check OK.
 echo.
 
-:: ── Обновление кода из GitHub ───────────────────────────
+:: ── Обновление кода из GitHub ──────────────────────────────
 if exist "%APP_DIR%update.bat" (
   set /p UPD=Obnovit kod iz GitHub? [Enter = da / 0 = net]: 
   if not "%UPD%"=="0" (
@@ -78,7 +78,7 @@ if exist "%APP_DIR%update.bat" (
   )
 )
 
-:: ── Sync changelog + roadmap ──────────────────────────────
+:: ── Sync changelog ─────────────────────────────────────────────
 set /p SYNC=Sync changelog s GitHub? [Enter = da / 0 = net]: 
 if not "%SYNC%"=="0" (
   echo.
@@ -86,7 +86,7 @@ if not "%SYNC%"=="0" (
   echo.
 )
 
-:: ── Выбор режима ───────────────────────────────────────
+:: ── Выбор режима ────────────────────────────────────────
 :ask_mode
 echo Select mode:
 echo   [1] Production  (normal work)
@@ -122,7 +122,7 @@ if "%OPEN_CHOICE%"=="1" (
   goto ask_open
 )
 
-:: ── Определяем IP ─────────────────────────────────────
+:: ── IP ───────────────────────────────────────────────────
 for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /i "IPv4"') do (
   set ip=%%a
   goto :found
@@ -137,14 +137,14 @@ echo  Network: http://%ip%:5000
 echo ============================================
 echo.
 
-:: ── Запуск сервера ─────────────────────────────────────
+:: ── Запуск сервера в этой же консоли ───────────────────
 :start_server
-echo Server is running... Close window to stop.
+echo Server is running... Press Ctrl+C to stop.
 echo.
 
 set FLASK_ENV=%FLASK_ENV%
 set APP_DEBUG=%APP_DEBUG%
-start "SONAR Server" /wait "%PYTHON%" "%APP_DIR%app.py"
+"%PYTHON%" "%APP_DIR%app.py"
 
 echo.
 echo ============================================
