@@ -2,7 +2,7 @@
 {# ╔══════════════════════════════════════════════════════════════╗ #}
 {# ║                        base.html                            ║ #}
 {# ║  Базовый шаблон приложения "Подбор ЗУ — НО"                 ║ #}
-{# ║  v2.5: GlobalSearch в топбаре (дропдаун + страница /search) ║ #}
+{# ║  v2.6: шорткат GlobalSearch Ctrl+Shift+F               ║ #}
 {# ╚══════════════════════════════════════════════════════════════╝ #}
 <html lang="ru">
 <head>
@@ -195,7 +195,7 @@
   {# ─── GlobalSearch ─────────────────────────────────────────── #}
   <div class="gs-wrap" id="gsWrap">
     <input type="text" class="gs-input" id="gsInput"
-           placeholder="Поиск обращений…"
+           placeholder="Поиск… (Ctrl+Shift+F)"
            autocomplete="off" spellcheck="false"
            aria-label="Глобальный поиск">
     <i class="bi bi-search gs-icon"></i>
@@ -511,9 +511,9 @@
     if (!document.getElementById('gsWrap').contains(e.target)) hideDropdown();
   });
 
-  // Фокус по Ctrl+K / Cmd+K
+  // Фокус по Ctrl+Shift+F
   document.addEventListener('keydown', function(e){
-    if ((e.ctrlKey || e.metaKey) && e.key === 'k'){
+    if (e.ctrlKey && e.shiftKey && e.key === 'F') {
       e.preventDefault();
       input.focus();
       input.select();
