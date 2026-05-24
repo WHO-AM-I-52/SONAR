@@ -31,7 +31,6 @@ def notifications():
 @login_required
 def changelog():
     current_version = CHANGELOG[0]['version'] if CHANGELOG else ''
-    # Отмечаем версию как просмотренную
     session['seen_version'] = current_version
     return render_template('changelog.html', changelog=CHANGELOG,
                            version=current_version, roadmap=ROADMAP)
@@ -96,3 +95,19 @@ def api_search():
            OR applicant_full_name  LIKE ?
            OR project_name         LIKE ?
         ORDER BY id DESC
+        LIMIT 20
+        """,
+        (like, like, like, like)
+    ).fetchall()
+    conn.close()
+    results = [
+        {
+            'id': r['id'],
+            'request_number': r['request_number'],
+            'applicant': r['applicant_short_name'] or r['applicant_full_name'] or '',
+            'status': r['status'],
+            'project_name': r['project_name'] or ''
+        }
+        for r in rows
+    ]
+    return jsonify({'results': results})
