@@ -1,5 +1,6 @@
 @echo off
 chcp 65001 >nul
+setlocal enabledelayedexpansion
 cd /d "%~dp0"
 title SONAR
 
@@ -15,7 +16,7 @@ set "PYTHON="
 set "SITEPKG="
 
 :: ============================================================
-:: [1] Ищем WPy рядом с этим файлом (основной вариант)
+:: [1] Ищем WPy рядом с этим файлом
 :: ============================================================
 for /d %%A in ("%APP_DIR%WPy\python-*.amd64") do (
   if exist "%%A\python.exe" (
@@ -25,51 +26,59 @@ for /d %%A in ("%APP_DIR%WPy\python-*.amd64") do (
 )
 
 :: ============================================================
-:: [2] Ищем WPy в любой соседней папке (любое имя: SONAR.Bac, backup и т.п.)
+:: [2] Если WPy не найден — предлагаем выбор
 :: ============================================================
 if not defined PYTHON (
-  for /d %%B in ("%APP_DIR%..\") do (
-    for /d %%A in ("%%B\WPy\python-*.amd64") do (
-      if exist "%%A\python.exe" (
-        set "PYTHON=%%A\python.exe"
-        set "SITEPKG=%%A\Lib\site-packages"
-        echo  [INFO] Python найден в соседней папке ^(fallback^)
-      )
-    )
-  )
-)
+  echo.
+  echo  [ВНИМАНИЕ] Python / WPy не найден в папке SONAR!
+  echo.
+  echo  Выбери вариант:
+  echo    [1] Запустить install.bat — автоустановка WPy
+  echo    [2] Указать путь к python.exe вручную
+  echo    [0] Выйти
+  echo.
+  set "PY_CHOICE="
+  set /p PY_CHOICE=  Выбор (1/2/0): 
 
-:: ============================================================
-:: [3] Если WPy не найден — предлагаем запустить install.bat
-:: ============================================================
-if not defined PYTHON (
-  echo.
-  echo  [ВНИМАНИЕ] Python не найден!
-  echo.
-  echo  Папка WPy\ не обнаружена рядом с SONAR.
-  echo.
-  if exist "%APP_DIR%install.bat" (
-    echo  Найден install.bat — запустить его чтобы установить WPy?
-    echo.
-    set /p INST=  Запустить install.bat? [Enter = да / 0 = нет]: 
-    if not "!INST!"=="0" (
+  if "!PY_CHOICE!"=="1" (
+    if exist "%APP_DIR%install.bat" (
+      echo.
       call "%APP_DIR%install.bat"
-      :: После установки перезапускаем поиск
+      :: После установки перезапускаем поиск Python
       for /d %%A in ("%APP_DIR%WPy\python-*.amd64") do (
         if exist "%%A\python.exe" (
           set "PYTHON=%%A\python.exe"
           set "SITEPKG=%%A\Lib\site-packages"
         )
       )
+    ) else (
+      echo.
+      echo  [ОШИБКА] install.bat не найден в папке SONAR.
+      echo  Положите install.bat рядом и повторите запуск.
+    )
+  ) else if "!PY_CHOICE!"=="2" (
+    echo.
+    echo  Укажите полный путь к python.exe
+    echo  Пример: C:\WPy64-31131\python-3.11.3.amd64\python.exe
+    echo.
+    set "MANUAL_PY="
+    set /p MANUAL_PY=  Путь: 
+    if exist "!MANUAL_PY!" (
+      set "PYTHON=!MANUAL_PY!"
+      :: Определяем SITEPKG автоматически
+      for %%X in ("!MANUAL_PY!") do set "SITEPKG=%%~dpXLib\site-packages"
+      echo  OK: Python найден по указанному пути.
+    ) else (
+      echo  [ОШИБКА] Файл не найден: !MANUAL_PY!
     )
   ) else (
-    echo  install.bat не найден.
-    echo  Скопируйте папку WPy\ рядом с этим файлом.
+    echo  Выход...
+    pause
+    exit /b 0
   )
-  echo.
 )
 
-:: Финальная проверка после возможной установки
+:: Финальная проверка
 if not defined PYTHON (
   echo.
   echo  [ОШИБКА] Python всё ещё не найден. Обратитесь к администратору.
@@ -78,6 +87,7 @@ if not defined PYTHON (
   exit /b 1
 )
 
+echo.
 echo  OK: %PYTHON%
 echo.
 
@@ -101,7 +111,6 @@ if exist "%APP_DIR%db\database.db" (
 ) else (
     echo  [ПРЕДУПРЕЖДЕНИЕ] db\database.db не найден
 )
-
 "%PYTHON%" -c "import os,glob;files=sorted(glob.glob('db/backups/database_*.db'));[os.remove(f) for f in files[:-5]];print('  Хранится резервных копий: '+str(min(len(files),5)))"
 echo.
 
@@ -111,8 +120,7 @@ echo.
 "%PYTHON%" -m py_compile app.py
 if errorlevel 1 (
   echo.
-  echo  [ОШИБКА] Синтаксисеская ошибка в app.py!
-  echo.
+  echo  [ОШИБКА] Синтаксическая ошибка в app.py!
   pause
   exit /b 1
 )
@@ -159,8 +167,7 @@ if "%MODE_CHOICE%"=="1" (
   set "FLASK_ENV=development"
   set "APP_DEBUG=1"
 ) else (
-  echo  Неверный выбор, введи 1 или 2.
-  echo.
+  echo  Неверный выбор.
   goto ask_mode
 )
 echo.
@@ -177,7 +184,6 @@ if "%OPEN_CHOICE%"=="1" (
   rem skip
 ) else (
   echo  Введи 1 или 0.
-  echo.
   goto ask_open
 )
 
@@ -214,7 +220,6 @@ echo ============================================
 echo.
 echo   [1] Перезапустить
 echo   [2] Выйти
-
 echo.
 set "CHOICE="
 set /p CHOICE=  Выбор (1/2): 
