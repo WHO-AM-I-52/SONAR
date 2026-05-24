@@ -259,8 +259,8 @@
   };
 
   var cache      = {};
-  var currentPop = null;   // текущий открытый Popover-объект
-  var currentTr  = null;   // строка, для которой открыт popover
+  var currentPop = null;
+  var currentTr  = null;
   var timer      = null;
 
   function buildHtml(d) {
@@ -277,16 +277,22 @@
 
   function destroyPop() {
     if (currentPop) {
-      // Только dispose() — hide() вызывает анимацию и обращается к
-      // уже-обнулённым внутренним структурам Bootstrap (TypeError в tooltip.js)
-      try { currentPop.dispose(); } catch(e){}
+      // Убираем DOM-элемент popover вручную ДО dispose().
+      // Bootstrap внутри dispose() вызывает hide(), который запускает
+      // анимацию и обращается к _activeTrigger через Object.keys() —
+      // если объект уже null → TypeError: Cannot convert undefined or null to object.
+      // Удаление tip из DOM заставляет Bootstrap пропустить анимацию.
+      try {
+        var tip = currentPop.getTipElement ? currentPop.getTipElement() : null;
+        if (tip && tip.parentNode) { tip.parentNode.removeChild(tip); }
+      } catch(e) {}
+      try { currentPop.dispose(); } catch(e) {}
       currentPop = null;
     }
     currentTr = null;
   }
 
   function openPop(tr, data) {
-    // если уже открыт для этой же строки — ничего не делаем
     if (currentTr === tr && currentPop) return;
     destroyPop();
     currentTr  = tr;
@@ -311,7 +317,6 @@
       .then(function(data) {
         if (!data) return;
         cache[rid] = data;
-        // показываем только если пользователь всё ещё стоит на этой строке
         if (currentTr === tr) openPop(tr, data);
       })
       .catch(function(){});
@@ -322,7 +327,7 @@
 
     tr.addEventListener('mouseenter', function() {
       clearTimeout(timer);
-      currentTr = tr;  // запоминаем строку сразу
+      currentTr = tr;
       timer = setTimeout(function() {
         fetchAndOpen(tr, rid);
       }, 300);
@@ -330,7 +335,6 @@
 
     tr.addEventListener('mouseleave', function() {
       clearTimeout(timer);
-      // небольшая задержка чтобы можно было завести мышь на поповер
       setTimeout(function() {
         if (document.querySelector('.popover:hover')) return;
         destroyPop();
@@ -338,7 +342,6 @@
     });
   });
 
-  // клик вне — закрываем
   document.addEventListener('click', function(e) {
     if (!e.target.closest('.popover') && !e.target.closest('tr[data-preview-id]')) {
       destroyPop();
