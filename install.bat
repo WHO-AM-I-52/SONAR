@@ -12,44 +12,41 @@ echo.
 set "APP_DIR=%~dp0"
 set "PYTHON="
 set "SITEPKG="
-set "WPY_DIR=%APP_DIR%WPy"
-set "TOOLS_PY=%APP_DIR%tools\python313\python.exe"
 
 :: ============================================================
 :: SHAG 1: Ishchem Python
 :: ============================================================
 echo [1/5] Poisk Python...
 
-:: Snachala ishchem v WPy (esli uzhe byl ustanovlen ranee)
-for /d %%A in ("%WPY_DIR%\python-*.amd64") do (
-  if exist "%%A\python.exe" (
-    set "PYTHON=%%A\python.exe"
-    set "SITEPKG=%%A\Lib\site-packages"
-  )
-)
-
-if defined PYTHON (
-  echo  OK (WPy): %PYTHON%
+:: Variant 1: uzhe byl skopirovan ranee v WPy\python313
+if exist "%APP_DIR%WPy\python313\python.exe" (
+  set "PYTHON=%APP_DIR%WPy\python313\python.exe"
+  set "SITEPKG=%APP_DIR%WPy\python313\Lib\site-packages"
+  echo  OK (WPy\python313): %PYTHON%
   goto :install_deps
 )
 
-:: Proverka tools\python313
-if exist "%TOOLS_PY%" (
-  echo  Nayden portativny Python v tools\python313
+:: Variant 2: portativny Python v tools\python313
+if exist "%APP_DIR%tools\python313\python.exe" (
+  echo  Nayden: tools\python313\python.exe
   echo  Kopiruyu v WPy\python313...
-  if not exist "%WPY_DIR%" mkdir "%WPY_DIR%"
-  xcopy /E /I /Y /Q "%APP_DIR%tools\python313" "%WPY_DIR%\python313"
-  set "PYTHON=%WPY_DIR%\python313\python.exe"
-  set "SITEPKG=%WPY_DIR%\python313\Lib\site-packages"
+  if not exist "%APP_DIR%WPy" mkdir "%APP_DIR%WPy"
+  xcopy /E /I /Y /Q "%APP_DIR%tools\python313" "%APP_DIR%WPy\python313"
+  if errorlevel 1 (
+    echo  [OSHIBKA] xcopy ne udalos.
+    pause
+    exit /b 1
+  )
+  set "PYTHON=%APP_DIR%WPy\python313\python.exe"
+  set "SITEPKG=%APP_DIR%WPy\python313\Lib\site-packages"
   echo  OK: %PYTHON%
   goto :install_deps
 )
 
-:: Nichego ne nashli
+:: Variant 3: vvod vruchnuyu
 echo.
-echo  [VNIMANIE] Python ne nayden.
+echo  [VNIMANIE] Python ne nayden avtomaticheski.
 echo.
-echo  Vyberi variant:
 echo    [1] Ukazat put k python.exe vruchnuyu
 echo    [0] Vyyti
 echo.
@@ -65,11 +62,11 @@ set /p MANUAL_PY=  Put k python.exe:
 if "%MANUAL_PY%"=="" goto :no_python
 if exist "%MANUAL_PY%" (
   set "PYTHON=%MANUAL_PY%"
-  for %%X in ("%MANUAL_PY%") do set "SITEPKG=%%~dpXLib\site-packages"
+  set "SITEPKG="
   echo  OK: %PYTHON%
   goto :install_deps
 )
-echo  [OSHIBKA] Fayl ne nayden.
+echo  [OSHIBKA] Fayl ne nayden: %MANUAL_PY%
 
 :no_python
 echo.
@@ -87,7 +84,7 @@ echo [2/5] Proverka pip...
 
 "%PYTHON%" -m pip --version >nul 2>&1
 if errorlevel 1 (
-  echo  pip ne nayden, ustanovka...
+  echo  pip ne nayden, ustanovka cherez get-pip.py...
   if exist "%APP_DIR%tools\python313\get-pip.py" (
     "%PYTHON%" "%APP_DIR%tools\python313\get-pip.py" --quiet
     echo  OK: pip ustanovlen.
@@ -126,14 +123,11 @@ echo  OK: zavisimosti ustanovleny.
 echo.
 echo [4/5] Sozdaniye papok...
 
-for %%D in (db uploads reports db\backups) do (
-  if not exist "%APP_DIR%%%D" (
-    mkdir "%APP_DIR%%%D"
-    echo  Sozdana: %%D
-  ) else (
-    echo  Uzhe est: %%D
-  )
-)
+if not exist "%APP_DIR%db" mkdir "%APP_DIR%db"
+if not exist "%APP_DIR%uploads" mkdir "%APP_DIR%uploads"
+if not exist "%APP_DIR%reports" mkdir "%APP_DIR%reports"
+if not exist "%APP_DIR%db\backups" mkdir "%APP_DIR%db\backups"
+echo  OK: papki sozdany.
 
 echo.
 echo  Podgotovka bazy dannykh...
@@ -155,7 +149,7 @@ if exist "%APP_DIR%db.py" (
     echo  OK: BD initializirovana.
   )
 ) else (
-  echo  [WARN] db.py ne nayden. BD budet sozdana pri zapuske.
+  echo  [WARN] BD budet sozdana pri pervom zapuske.
 )
 
 :: ============================================================
