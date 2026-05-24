@@ -1,5 +1,16 @@
 CHANGELOG = [
     {
+        "version": "2.3.1",
+        "date": "25.05.2026",
+        "changes": [
+            "Unseen changelog badge (#8): на пункте \"Версии\" в сайдбаре появляется красный бейдж NEW если пользователь ещё не читал последний changelog",
+            "Факт просмотра хранится в localStorage (ключ changelog_seen_version), сравнивается с текущей app_version",
+            "Бейдж автоматически скрывается при клике на пункт \"Версии\" или при прямом переходе на /changelog",
+            "Бейдж скрывается при свёрнутом сайдбаре — поведение аналогично счётчику уведомлений",
+            "base.html: версия шаблона повышена до v2.7, добавлен скрытый div#appMeta для передачи app_version в JavaScript",
+        ],
+    },
+    {
         "version": "2.2.1",
         "date": "25.05.2026",
         "changes": [
@@ -210,6 +221,17 @@ CHANGELOG = [
 
 ROADMAP = [
     {
+        "version": "v2.3.1",
+        "title": "UX: Unseen changelog badge",
+        "status": "done",
+        "eta": "май 2026",
+        "points": [
+            "Красный бейдж NEW на пункте Версии в сайдбаре",
+            "Хранение факта просмотра в localStorage",
+            "Автосброс при открытии страницы /changelog",
+        ],
+    },
+    {
         "version": "v2.2.1",
         "title": "Hotfix: батник и base.html",
         "status": "done",
@@ -236,7 +258,7 @@ ROADMAP = [
         ],
     },
     {
-        "version": "v2.3",
+        "version": "v2.4",
         "title": "OCR и автозаполнение",
         "status": "planned",
         "eta": "июнь 2026",
@@ -247,7 +269,7 @@ ROADMAP = [
         ],
     },
     {
-        "version": "v2.4",
+        "version": "v2.5",
         "title": "Уведомления",
         "status": "planned",
         "eta": "июль 2026",
