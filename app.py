@@ -1,6 +1,6 @@
 # ╔══════════════════════════════════════════════════════════════╗
 # ║ app.py                                                       ║
-# ║ v2.1: GlobalSearch blueprint зарегистрирован                ║
+# ║ v2.2: preview_bp (hover-popover, фича #6) зарегистрирован   ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 import os
@@ -20,8 +20,10 @@ app.secret_key = _secrets.token_hex(32)
 # ─── Blueprints ───────────────────────────────────────────────
 from phonebook_routes import phonebook_bp
 from search_routes    import search_bp
+from preview_routes   import preview_bp
 app.register_blueprint(phonebook_bp)
 app.register_blueprint(search_bp)
+app.register_blueprint(preview_bp)
 
 def init_db():
     conn = sqlite3.connect(DB_PATH, timeout=15)
