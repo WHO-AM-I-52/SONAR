@@ -4,6 +4,11 @@ chcp 65001 >nul
 cd /d "%~dp0"
 title SONAR - Ustanovka
 
+:: Autofix: konvertiruem LF->CRLF esli nuzho
+powershell -Command "$f='%~f0'; $c=(Get-Content $f -Raw); if($c -notmatch '\r\n'){(Get-Content $f)|Set-Content $f; Start-Process 'cmd' -ArgumentList '/c',$f -NoNewWindow; exit}"
+if errorlevel 1 goto :start
+
+:start
 echo.
 echo ============================================================
 echo   SONAR - Ustanovka / pervonachalnaya nastroyka
@@ -25,7 +30,6 @@ if exist "%PYTHON%" (
   goto :check_lib
 )
 
-:: Skachivayem embeddable Python 3.13
 echo  Python ne nayden. Skachivayem Python 3.13 embeddable...
 if not exist "%APP_DIR%WPy" mkdir "%APP_DIR%WPy"
 
@@ -45,7 +49,6 @@ if errorlevel 1 (
 )
 del "%APP_DIR%WPy\python313.zip" >nul 2>&1
 
-:: Kopiruem get-pip.py esli est v tools
 if exist "%APP_DIR%tools\python313\get-pip.py" (
   copy /Y "%APP_DIR%tools\python313\get-pip.py" "%PYDIR%\get-pip.py" >nul
 )
@@ -53,7 +56,7 @@ if exist "%APP_DIR%tools\python313\get-pip.py" (
 echo  OK: Python 3.13 ustanovlen.
 
 :: ============================================================
-:: SHAG 1.5: Raspakovat vnutrenniy python313.zip (standartaya biblioteka)
+:: SHAG 1.5: Raspakovat vnutrenniy python313.zip (standartnaya biblioteka)
 :: ============================================================
 :check_lib
 if exist "%PYDIR%\Lib\os.py" (
@@ -64,7 +67,7 @@ if exist "%PYDIR%\Lib\os.py" (
 if exist "%PYDIR%\python313.zip" (
   echo  Raspakovka standartnoy biblioteki...
   powershell -Command "Expand-Archive -Path '%PYDIR%\python313.zip' -DestinationPath '%PYDIR%\Lib' -Force"
-  echo  OK: Lib raspakована.
+  echo  OK: Lib raspakovna.
 ) else (
   echo  [WARN] python313.zip ne nayden - Lib mozhet byt nedostupna.
 )
