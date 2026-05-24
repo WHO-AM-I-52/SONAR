@@ -83,13 +83,13 @@ if not defined SITEPKG goto :skip_pth
 del /f /q "%SITEPKG%\distutils-precedence.pth" 2>nul
 :skip_pth
 
-:: Bekap BD
+:: Bekap BD cherez Python (nezavisimost ot regional'nykh nastroyek)
 cd /d "%APP_DIR%"
 if not exist "%APP_DIR%db\backups" mkdir "%APP_DIR%db\backups"
 if exist "%APP_DIR%db\database.db" (
-  set "BKDATE=%date:~6,4%%date:~3,2%%date:~0,2%"
-  xcopy /Y /I "%APP_DIR%db\database.db" "%APP_DIR%db\backups\database_%BKDATE%.db*" >nul
-  echo  Bekap: db\backups\database_%BKDATE%.db
+  for /f %%D in ('"%PYTHON%" -c "from datetime import date; print(date.today().strftime('%%Y%%m%%d'))"') do set "BKDATE=%%D"
+  xcopy /Y /I "%APP_DIR%db\database.db" "%APP_DIR%db\backups\database_!BKDATE!.db*" >nul
+  echo  Bekap: db\backups\database_!BKDATE!.db
 ) else (
   echo  [WARN] db\database.db ne nayden
 )
