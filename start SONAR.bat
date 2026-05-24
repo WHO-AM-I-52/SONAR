@@ -4,6 +4,9 @@ chcp 65001 >nul
 cd /d "%~dp0"
 title SONAR
 
+:: Autofix LF->CRLF (bez perezapuska)
+powershell -Command "$f='%~f0'; $c=[System.IO.File]::ReadAllText($f); if($c -notmatch '\r\n'){$c=$c -replace '(?<!\r)\n','\r\n'; [System.IO.File]::WriteAllText($f,$c)}"
+
 echo ============================================
 echo  SONAR - Nizhegorodskaya oblast
 echo ============================================
