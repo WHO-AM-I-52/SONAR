@@ -2,7 +2,7 @@
 {# ╔══════════════════════════════════════════════════════════════╗ #}
 {# ║                        base.html                            ║ #}
 {# ║  Базовый шаблон приложения "Подбор ЗУ — НО"                 ║ #}
-{# ║  v2.6: шорткат GlobalSearch Ctrl+Shift+F               ║ #}
+{# ║  v2.7: Unseen changelog badge (#8)                      ║ #}
 {# ╚══════════════════════════════════════════════════════════════╝ #}
 <html lang="ru">
 <head>
@@ -173,6 +173,9 @@
 </head>
 <body>
 
+{# ─── передаём app_version в JS через data-атрибут ────────────── #}
+<div id="appMeta" data-version="{{ app_version }}" style="display:none"></div>
+
 <div id="offlineBanner">
   <div class="ob-inner">
     <div class="ob-icon">⚠️</div>
@@ -267,7 +270,12 @@
     <a href="/admin/users" class="sb-link {{ 'active' if 'users' in request.path }}"><i class="bi bi-people"></i><span class="sb-lbl">Пользователи</span></a>
     {% endif %}
     <div class="sb-sep"></div>
-    <a href="{{ url_for('misc.changelog') }}" class="sb-link {{ 'active' if request.path=='/changelog' }}"><i class="bi bi-journal-text"></i><span class="sb-lbl">Версии</span></a>
+    {# ─── Версии: badge показывается если пользователь не читал последний changelog ── #}
+    <a href="{{ url_for('misc.changelog') }}" class="sb-link {{ 'active' if request.path=='/changelog' }}" id="changelogLink">
+      <i class="bi bi-journal-text"></i>
+      <span class="sb-lbl">Версии</span>
+      <span class="sb-badge" id="changelogBadge" style="display:none">NEW</span>
+    </a>
     <a href="https://github.com/WHO-AM-I-52/SONAR" target="_blank" rel="noopener noreferrer" class="sb-link"><i class="bi bi-github"></i><span class="sb-lbl">GitHub</span></a>
     <div class="sb-sep"></div>
     <button class="theme-toggle-btn" id="themeToggle" title="Сменить тему">
@@ -356,6 +364,39 @@
       syncUI();
     });
   });
+})();
+</script>
+
+{# ─── Unseen changelog badge (#8) ───────────────────────────── #}
+<script>
+(function(){
+  var badge = document.getElementById('changelogBadge');
+  var link  = document.getElementById('changelogLink');
+  if (!badge || !link) return;
+
+  var meta    = document.getElementById('appMeta');
+  var current = meta ? meta.getAttribute('data-version') : null;
+  if (!current) return;
+
+  var LS_KEY  = 'changelog_seen_version';
+  var seen    = localStorage.getItem(LS_KEY);
+
+  // Показываем badge если текущая версия ещё не просмотрена
+  if (seen !== current) {
+    badge.style.display = '';
+  }
+
+  // При клике на пункт «Версии» — помечаем версию как просмотренную
+  link.addEventListener('click', function(){
+    localStorage.setItem(LS_KEY, current);
+    badge.style.display = 'none';
+  });
+
+  // Если пользователь уже находится на странице changelog — сразу помечаем
+  if (window.location.pathname === '/changelog') {
+    localStorage.setItem(LS_KEY, current);
+    badge.style.display = 'none';
+  }
 })();
 </script>
 
