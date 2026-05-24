@@ -1,6 +1,6 @@
 # ╔══════════════════════════════════════════════════════════════╗
 # ║ app.py                                                       ║
-# ║ v2.2: preview_bp (hover-popover, фича #6) зарегистрирован   ║
+# ║ v2.2: settings_bp зарегистрирован (#10 SettingsMenu)        ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 import os
@@ -20,10 +20,8 @@ app.secret_key = _secrets.token_hex(32)
 # ─── Blueprints ───────────────────────────────────────────────
 from phonebook_routes import phonebook_bp
 from search_routes    import search_bp
-from preview_routes   import preview_bp
 app.register_blueprint(phonebook_bp)
 app.register_blueprint(search_bp)
-app.register_blueprint(preview_bp)
 
 def init_db():
     conn = sqlite3.connect(DB_PATH, timeout=15)
@@ -168,6 +166,15 @@ CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     if 'must_change_password' not in user_cols:
         conn.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0")
 
+    # ── Миграция users (v2.2 — settings) ────────────────────────
+    for col, definition in [
+        ('email',               'TEXT DEFAULT NULL'),
+        ('theme',               "TEXT DEFAULT 'light'"),
+        ('email_notifications', 'INTEGER DEFAULT 0'),
+    ]:
+        if col not in user_cols:
+            conn.execute(f"ALTER TABLE users ADD COLUMN {col} {definition}")
+
     # ── Создание admin если нет ──────────────────────────────────
     if not conn.execute("SELECT id FROM users WHERE username='admin'").fetchone():
         conn.execute(
@@ -228,6 +235,15 @@ def migrate_db():
             conn.execute(f"ALTER TABLE users ADD COLUMN {col} INTEGER DEFAULT 0")
     if 'must_change_password' not in user_cols:
         conn.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0")
+
+    # ── users (v2.2 — settings) ───────────────────────────────────
+    for col, definition in [
+        ('email',               'TEXT DEFAULT NULL'),
+        ('theme',               "TEXT DEFAULT 'light'"),
+        ('email_notifications', 'INTEGER DEFAULT 0'),
+    ]:
+        if col not in user_cols:
+            conn.execute(f"ALTER TABLE users ADD COLUMN {col} {definition}")
 
     # ── login_log (v2.0) ─────────────────────────────────────────
     conn.executescript("""
@@ -366,13 +382,14 @@ def inject_globals():
     )
 
 
-from login_routes   import auth_bp
-from request_routes import requests_bp
-from admin_routes   import admin_bp
-from export_routes  import report_bp
-from info_routes    import misc_bp
-from okved_admin    import okved_bp
-from okved_api      import okved_api_bp
+from login_routes    import auth_bp
+from request_routes  import requests_bp
+from admin_routes    import admin_bp
+from export_routes   import report_bp
+from info_routes     import misc_bp
+from okved_admin     import okved_bp
+from okved_api       import okved_api_bp
+from settings_routes import settings_bp  # feat #10
 
 app.register_blueprint(okved_bp)
 app.register_blueprint(okved_api_bp)
@@ -381,6 +398,7 @@ app.register_blueprint(requests_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(report_bp)
 app.register_blueprint(misc_bp)
+app.register_blueprint(settings_bp)  # feat #10
 
 if __name__ == '__main__':
     init_db()
