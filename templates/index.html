@@ -112,89 +112,64 @@
 {# ===== CHIP-ФИЛЬТРЫ (Feature #5 FilterBar) ===== #}
 <div class="chip-filterbar card mb-3 p-2" style="background:#f8f9fa;border:1px solid #dee2e6">
   <div class="d-flex flex-wrap gap-3 align-items-center">
-
-    {# --- Группа: Статус --- #}
     <div class="d-flex align-items-center gap-1 flex-wrap">
       <span class="text-muted" style="font-size:11px;white-space:nowrap">
         <i class="bi bi-circle-half me-1"></i>Статус:
       </span>
-      <button class="btn btn-sm btn-outline-secondary"
-              data-chip-group="status" data-chip-value="draft" data-chip-base="secondary">
+      <button class="btn btn-sm btn-outline-secondary" data-chip-group="status" data-chip-value="draft" data-chip-base="secondary">
         <i class="bi bi-pencil-square me-1"></i>Черновик
       </button>
-      <button class="btn btn-sm btn-outline-warning"
-              data-chip-group="status" data-chip-value="review" data-chip-base="warning">
+      <button class="btn btn-sm btn-outline-warning" data-chip-group="status" data-chip-value="review" data-chip-base="warning">
         <i class="bi bi-hourglass-split me-1"></i>На проверке
       </button>
-      <button class="btn btn-sm btn-outline-primary"
-              data-chip-group="status" data-chip-value="accepted" data-chip-base="primary">
+      <button class="btn btn-sm btn-outline-primary" data-chip-group="status" data-chip-value="accepted" data-chip-base="primary">
         <i class="bi bi-briefcase me-1"></i>В работе
       </button>
-      <button class="btn btn-sm btn-outline-success"
-              data-chip-group="status" data-chip-value="answered" data-chip-base="success">
+      <button class="btn btn-sm btn-outline-success" data-chip-group="status" data-chip-value="answered" data-chip-base="success">
         <i class="bi bi-check2-circle me-1"></i>Отвечено
       </button>
     </div>
-
     <div class="vr d-none d-md-block"></div>
-
-    {# --- Группа: Дата --- #}
     <div class="d-flex align-items-center gap-1 flex-wrap">
       <span class="text-muted" style="font-size:11px;white-space:nowrap">
         <i class="bi bi-calendar3 me-1"></i>Дата:
       </span>
-      <button class="btn btn-sm btn-outline-info"
-              data-chip-group="date" data-chip-value="today" data-chip-base="info">
+      <button class="btn btn-sm btn-outline-info" data-chip-group="date" data-chip-value="today" data-chip-base="info">
         <i class="bi bi-calendar-day me-1"></i>Сегодня
       </button>
-      <button class="btn btn-sm btn-outline-info"
-              data-chip-group="date" data-chip-value="week" data-chip-base="info">
+      <button class="btn btn-sm btn-outline-info" data-chip-group="date" data-chip-value="week" data-chip-base="info">
         <i class="bi bi-calendar-week me-1"></i>Неделя
       </button>
-      <button class="btn btn-sm btn-outline-info"
-              data-chip-group="date" data-chip-value="month" data-chip-base="info">
+      <button class="btn btn-sm btn-outline-info" data-chip-group="date" data-chip-value="month" data-chip-base="info">
         <i class="bi bi-calendar-month me-1"></i>Месяц
       </button>
     </div>
-
     <div class="vr d-none d-md-block"></div>
-
-    {# --- Группа: Ответственный --- #}
     {% if employees %}
     <div class="d-flex align-items-center gap-1 flex-wrap">
       <span class="text-muted" style="font-size:11px;white-space:nowrap">
         <i class="bi bi-person me-1"></i>Ответственный:
       </span>
       {% for e in employees %}
-      <button class="btn btn-sm btn-outline-dark"
-              data-chip-group="employee"
-              data-chip-value="{{ e.full_name }}"
-              data-chip-base="dark"
-              title="{{ e.full_name }}">
+      <button class="btn btn-sm btn-outline-dark" data-chip-group="employee"
+              data-chip-value="{{ e.full_name }}" data-chip-base="dark" title="{{ e.full_name }}">
         {{ e.full_name.split()[0] if e.full_name else '?' }}
       </button>
       {% endfor %}
     </div>
     {% endif %}
-
     <div class="vr d-none d-md-block"></div>
-
-    {# --- Избранные --- #}
     <div class="d-flex align-items-center gap-1">
-      <button class="btn btn-sm btn-outline-warning"
-              data-chip-group="favorite" data-chip-value="1" data-chip-base="warning">
+      <button class="btn btn-sm btn-outline-warning" data-chip-group="favorite" data-chip-value="1" data-chip-base="warning">
         <i class="bi bi-star-fill me-1"></i>Избранные
       </button>
     </div>
-
     <div class="ms-auto d-flex align-items-center gap-2">
       <span class="text-muted small" id="chip-visible-count"></span>
-      <button id="chip-reset-all" class="btn btn-sm btn-outline-danger"
-              title="Сбросить chip-фильтры">
+      <button id="chip-reset-all" class="btn btn-sm btn-outline-danger" title="Сбросить chip-фильтры">
         <i class="bi bi-x-circle"></i> Сброс
       </button>
     </div>
-
   </div>
 </div>
 
@@ -253,7 +228,6 @@
       {% else %}
         {% set overdue = false %}
       {% endif %}
-      {# data-preview-id — для hover-popover (фича #6) #}
       <tr class="{{ 'table-danger' if overdue else '' }}"
           data-preview-id="{{ r.id }}"
           data-status="{{ r.status }}"
@@ -340,11 +314,9 @@
   </div>
 </div>
 
-{# chip-фильтры JS #}
 <script src="{{ url_for('static', filename='js/filter_chips.js') }}"></script>
 {% endblock %}
 
-{# ===== HOVER-POPOVER (фича #6) — выполняется ПОСЛЕ bootstrap.bundle.min.js ===== #}
 {% block scripts %}
 <script>
 (function () {
@@ -365,69 +337,88 @@
   function buildContent(d) {
     const color = STATUS_COLOR[d.status] || '#333';
     return [
-      `<table class="table table-sm mb-0" style="font-size:12px;min-width:220px">`,
-      `<tr><th class="text-muted fw-normal pe-2" style="white-space:nowrap">№</th>`,
-      `<td class="fw-bold">${d.number}</td></tr>`,
-      `<tr><th class="text-muted fw-normal">Заявитель</th><td>${d.applicant}</td></tr>`,
-      `<tr><th class="text-muted fw-normal">Статус</th>`,
-      `<td><span class="badge" style="background:${color}">${d.status_label}</span></td></tr>`,
-      `<tr><th class="text-muted fw-normal">Контакт</th><td>${d.contact}</td></tr>`,
-      `<tr><th class="text-muted fw-normal">Тел.</th><td>${d.phone}</td></tr>`,
-      `<tr><th class="text-muted fw-normal">Изменено</th><td class="text-nowrap">${d.updated_at}</td></tr>`,
-      `</table>`,
+      '<table class="table table-sm mb-0" style="font-size:12px;min-width:220px">',
+      '<tr><th class="text-muted fw-normal pe-2" style="white-space:nowrap">№</th>',
+      '<td class="fw-bold">' + d.number + '</td></tr>',
+      '<tr><th class="text-muted fw-normal">Заявитель</th><td>' + d.applicant + '</td></tr>',
+      '<tr><th class="text-muted fw-normal">Статус</th>',
+      '<td><span class="badge" style="background:' + color + '">' + d.status_label + '</span></td></tr>',
+      '<tr><th class="text-muted fw-normal">Контакт</th><td>' + d.contact + '</td></tr>',
+      '<tr><th class="text-muted fw-normal">Тел.</th><td>' + d.phone + '</td></tr>',
+      '<tr><th class="text-muted fw-normal">Изменено</th><td class="text-nowrap">' + d.updated_at + '</td></tr>',
+      '</table>',
     ].join('');
   }
 
+  // Обнуляем СНАЧАЛА, затем hide/dispose — не наоборот
   function hidePopover() {
-    if (activePopover) { activePopover.hide(); activePopover.dispose(); activePopover = null; }
+    var pop = activePopover;
+    activePopover = null;
     activeRow = null;
+    if (pop) {
+      try { pop.hide(); } catch (e) {}
+      try { pop.dispose(); } catch (e) {}
+    }
   }
 
   function showPopover(tr, data) {
     if (activeRow === tr) return;
     hidePopover();
     activeRow = tr;
-    activePopover = new bootstrap.Popover(tr, {
-      trigger:   'manual',
-      html:      true,
-      placement: 'auto',
-      title:     '<i class="bi bi-file-text me-1"></i>Превью обращения',
-      content:   buildContent(data),
-      sanitize:  false,
-    });
-    activePopover.show();
+    try {
+      activePopover = new bootstrap.Popover(tr, {
+        trigger:   'manual',
+        html:      true,
+        placement: 'auto',
+        title:     '<i class="bi bi-file-text me-1"></i>Превью обращения',
+        content:   buildContent(data),
+        sanitize:  false,
+      });
+      activePopover.show();
+    } catch (e) {
+      activePopover = null;
+    }
   }
 
-  async function loadAndShow(tr, rid) {
+  function loadAndShow(tr, rid) {
     if (cache[rid]) { showPopover(tr, cache[rid]); return; }
-    try {
-      const resp = await fetch(`/api/request/${rid}/preview`);
-      if (!resp.ok) return;
-      const data = await resp.json();
-      cache[rid] = data;
-      if (activeRow === tr) showPopover(tr, data);
-    } catch (e) {}
+    fetch('/api/request/' + rid + '/preview')
+      .then(function (resp) { return resp.ok ? resp.json() : null; })
+      .then(function (data) {
+        if (!data) return;
+        cache[rid] = data;
+        if (activeRow === tr) showPopover(tr, data);
+      })
+      .catch(function () {});
   }
 
   document.querySelectorAll('tr[data-preview-id]').forEach(function (tr) {
-    const rid = tr.dataset.previewId;
+    var rid = tr.dataset.previewId;
 
     tr.addEventListener('mouseenter', function () {
+      clearTimeout(hoverTimer);
       activeRow = tr;
-      hoverTimer = setTimeout(function () { loadAndShow(tr, rid); }, 250);
+      hoverTimer = setTimeout(function () {
+        if (activeRow === tr) loadAndShow(tr, rid);
+      }, 250);
     });
 
     tr.addEventListener('mouseleave', function () {
       clearTimeout(hoverTimer);
+      var leftRow = tr;
       setTimeout(function () {
-        const pop = document.querySelector('.popover:hover');
+        // скрываем только если мышь не над popover и не на другой строке
+        if (activeRow !== leftRow) return;
+        var pop = document.querySelector('.popover:hover');
         if (!pop) hidePopover();
-      }, 80);
+      }, 120);
     });
   });
 
   document.addEventListener('click', function (e) {
-    if (!e.target.closest('.popover') && !e.target.closest('tr[data-preview-id]')) hidePopover();
+    if (!e.target.closest('.popover') && !e.target.closest('tr[data-preview-id]')) {
+      hidePopover();
+    }
   });
 })();
 </script>
