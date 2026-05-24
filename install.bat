@@ -13,12 +13,14 @@ set "APP_DIR=%~dp0"
 set "PYTHON="
 set "SITEPKG="
 set "WPY_DIR=%APP_DIR%WPy"
+set "TOOLS_PY=%APP_DIR%tools\python313\python.exe"
 
 :: ============================================================
-:: SHAG 1: Ishchem Python / WPy ryadom
+:: SHAG 1: Ishchem Python
 :: ============================================================
-echo [1/6] Poisk Python...
+echo [1/5] Poisk Python...
 
+:: Snachala ishchem v WPy (esli uzhe byl ustanovlen ranee)
 for /d %%A in ("%WPY_DIR%\python-*.amd64") do (
   if exist "%%A\python.exe" (
     set "PYTHON=%%A\python.exe"
@@ -27,99 +29,47 @@ for /d %%A in ("%WPY_DIR%\python-*.amd64") do (
 )
 
 if defined PYTHON (
+  echo  OK (WPy): %PYTHON%
+  goto :install_deps
+)
+
+:: Proverka tools\python313
+if exist "%TOOLS_PY%" (
+  echo  Nayden portativny Python v tools\python313
+  echo  Kopiruyu v WPy\python313...
+  if not exist "%WPY_DIR%" mkdir "%WPY_DIR%"
+  xcopy /E /I /Y /Q "%APP_DIR%tools\python313" "%WPY_DIR%\python313"
+  set "PYTHON=%WPY_DIR%\python313\python.exe"
+  set "SITEPKG=%WPY_DIR%\python313\Lib\site-packages"
   echo  OK: %PYTHON%
   goto :install_deps
 )
 
-:: WPy ne nayden
-echo  WPy ne nayden v papke SONAR\WPy\
+:: Nichego ne nashli
+echo.
+echo  [VNIMANIE] Python ne nayden.
 echo.
 echo  Vyberi variant:
-echo    [1] Skachat i ustanovit WPy avtomaticheski (trebuetsya Internet)
-echo    [2] Ukazat put k python.exe vruchnuyu
+echo    [1] Ukazat put k python.exe vruchnuyu
 echo    [0] Vyyti
 echo.
-set "DL_CHOICE="
-set /p DL_CHOICE=  Vybor (1/2/0): 
-
-if "%DL_CHOICE%"=="1" goto :download_wpy
-if "%DL_CHOICE%"=="2" goto :manual_path
+set "CHOICE="
+set /p CHOICE=  Vybor (1/0): 
+if "%CHOICE%"=="1" goto :manual_path
 goto :quit
 
-:: ============================================================
-:: AVTOSKACHIVANIYE WPy cherez PS1
-:: ============================================================
-:download_wpy
-echo.
-echo  [2/6] Skachivanie posledney versii WPy...
-
-if not exist "%WPY_DIR%" mkdir "%WPY_DIR%"
-
-powershell -NoProfile -ExecutionPolicy Bypass -File "%APP_DIR%download_wpy.ps1" -TargetDir "%WPY_DIR%"
-
-if errorlevel 1 (
-  echo.
-  echo  [OSHIBKA] Avtoskachivaniye ne udalos.
-  echo  Proverte podklyucheniye k Internetu.
-  echo  Ili skachain WPy vruchnuyu: https://winpython.github.io/
-  goto :manual_path
-)
-
-echo.
-echo  Raspakuyu WPy (2-5 minut)...
-
-"%WPY_DIR%\wpy_setup.exe" -o"%WPY_DIR%" -y
-
-del /f /q "%WPY_DIR%\wpy_setup.exe" 2>nul
-
-:: Ishchem python posle raspakrovki
-for /d %%B in ("%WPY_DIR%\WPy64*") do (
-  for /d %%A in ("%%B\python-*.amd64") do (
-    if exist "%%A\python.exe" (
-      set "PYTHON=%%A\python.exe"
-      set "SITEPKG=%%A\Lib\site-packages"
-    )
-  )
-)
-for /d %%A in ("%WPY_DIR%\python-*.amd64") do (
-  if exist "%%A\python.exe" (
-    set "PYTHON=%%A\python.exe"
-    set "SITEPKG=%%A\Lib\site-packages"
-  )
-)
-
-if defined PYTHON (
-  echo  OK: WPy ustanovlen!
-  echo  Python: %PYTHON%
-  goto :install_deps
-)
-
-echo.
-echo  [OSHIBKA] WPy skachan, no python.exe ne nayden.
-echo  Prover papku: %WPY_DIR%
-goto :manual_path
-
-:: ============================================================
-:: RUCHNOY PUT
-:: ============================================================
 :manual_path
 echo.
-echo  Ukazhi polnyy put k python.exe:
-echo  Primer: C:\WPy64-31131\python-3.11.3.amd64\python.exe
-echo.
 set "MANUAL_PY="
-set /p MANUAL_PY=  Put k python.exe (ili Enter chtoby vyyti): 
-
+set /p MANUAL_PY=  Put k python.exe: 
 if "%MANUAL_PY%"=="" goto :no_python
 if exist "%MANUAL_PY%" (
   set "PYTHON=%MANUAL_PY%"
   for %%X in ("%MANUAL_PY%") do set "SITEPKG=%%~dpXLib\site-packages"
   echo  OK: %PYTHON%
   goto :install_deps
-) else (
-  echo  [OSHIBKA] Fayl ne nayden: %MANUAL_PY%
-  goto :no_python
 )
+echo  [OSHIBKA] Fayl ne nayden.
 
 :no_python
 echo.
@@ -129,31 +79,52 @@ pause
 exit /b 1
 
 :: ============================================================
-:: SHAG 3: Zavisimosti
+:: SHAG 2: Proverka pip
 :: ============================================================
 :install_deps
 echo.
-echo [3/6] Ustanovka zavisimostey iz requirements.txt...
+echo [2/5] Proverka pip...
+
+"%PYTHON%" -m pip --version >nul 2>&1
+if errorlevel 1 (
+  echo  pip ne nayden, ustanovka...
+  if exist "%APP_DIR%tools\python313\get-pip.py" (
+    "%PYTHON%" "%APP_DIR%tools\python313\get-pip.py" --quiet
+    echo  OK: pip ustanovlen.
+  ) else (
+    "%PYTHON%" -m ensurepip --upgrade >nul 2>&1
+    echo  OK: pip cherez ensurepip.
+  )
+) else (
+  echo  OK: pip est.
+)
+
+:: ============================================================
+:: SHAG 3: Zavisimosti
+:: ============================================================
+echo.
+echo [3/5] Ustanovka zavisimostey iz requirements.txt...
 
 if not exist "%APP_DIR%requirements.txt" (
-  echo  [PREDUPREZHDENIE] requirements.txt ne nayden - propusk.
+  echo  [WARN] requirements.txt ne nayden - propusk.
   goto :create_dirs
 )
 
 "%PYTHON%" -m pip install --quiet -r "%APP_DIR%requirements.txt"
 if errorlevel 1 (
   echo  [OSHIBKA] Ne udalos ustanovit zavisimosti.
+  echo  Proverte podklyucheniye k Internetu.
   pause
   exit /b 1
 )
 echo  OK: zavisimosti ustanovleny.
 
 :: ============================================================
-:: SHAG 4: Papki
+:: SHAG 4: Papki i BD
 :: ============================================================
 :create_dirs
 echo.
-echo [4/6] Sozdaniye papok...
+echo [4/5] Sozdaniye papok...
 
 for %%D in (db uploads reports db\backups) do (
   if not exist "%APP_DIR%%%D" (
@@ -164,45 +135,39 @@ for %%D in (db uploads reports db\backups) do (
   )
 )
 
-:: ============================================================
-:: SHAG 5: Baza dannykh
-:: ============================================================
 echo.
-echo [5/6] Podgotovka bazy dannykh...
+echo  Podgotovka bazy dannykh...
 
 if exist "%APP_DIR%db\database.db" (
-  echo  Baza uzhe sushchestvuyet - ne trogaem.
+  echo  BD uzhe est - ne trogaem.
   goto :create_env
 )
-
 if exist "%APP_DIR%db\db_template.db" (
   copy /Y "%APP_DIR%db\db_template.db" "%APP_DIR%db\database.db" >nul
-  echo  OK: Baza sozdana iz db_template.db
+  echo  OK: BD sozdana iz shablona.
   goto :create_env
 )
-
 if exist "%APP_DIR%db.py" (
   "%PYTHON%" "%APP_DIR%db.py"
   if errorlevel 1 (
-    echo  [PREDUPREZHDENIE] db.py vernul oshibku.
+    echo  [WARN] db.py vernul oshibku.
   ) else (
-    echo  OK: Baza initializirovana.
+    echo  OK: BD initializirovana.
   )
 ) else (
-  echo  [PREDUPREZHDENIE] db.py ne nayden. BD budet sozdana pri zapuske.
+  echo  [WARN] db.py ne nayden. BD budet sozdana pri zapuske.
 )
 
 :: ============================================================
-:: SHAG 6: .env
+:: SHAG 5: .env
 :: ============================================================
 :create_env
 echo.
-echo [6/6] Proverka .env...
+echo [5/5] Proverka .env...
 
 if exist "%APP_DIR%.env" (
   echo  .env uzhe est - ne trogaem.
 ) else (
-  echo  Sozdayu .env...
   "%PYTHON%" -c "import secrets; open('.env','w').write('SECRET_KEY=' + secrets.token_hex(32) + '\n')"
   echo  OK: .env sozdan.
 )
