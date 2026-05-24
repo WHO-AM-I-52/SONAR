@@ -83,11 +83,13 @@ if not defined SITEPKG goto :skip_pth
 del /f /q "%SITEPKG%\distutils-precedence.pth" 2>nul
 :skip_pth
 
-:: Bekap BD cherez Python (nezavisimost ot regional'nykh nastroyek)
+:: Bekap BD - data cherez temp-fayl
 cd /d "%APP_DIR%"
 if not exist "%APP_DIR%db\backups" mkdir "%APP_DIR%db\backups"
 if exist "%APP_DIR%db\database.db" (
-  for /f %%D in ('"%PYTHON%" -c "from datetime import date; print(date.today().strftime('%%Y%%m%%d'))"') do set "BKDATE=%%D"
+  "%PYTHON%" -c "from datetime import date; open('db\\backups\\.bkdate','w').write(date.today().strftime('%%Y%%m%%d'))"
+  set /p BKDATE=<"db\backups\.bkdate"
+  del /f /q "db\backups\.bkdate" 2>nul
   xcopy /Y /I "%APP_DIR%db\database.db" "%APP_DIR%db\backups\database_!BKDATE!.db*" >nul
   echo  Bekap: db\backups\database_!BKDATE!.db
 ) else (
@@ -109,8 +111,14 @@ echo.
 
 :: Obnovlenie koda
 if exist "%APP_DIR%update.bat" (
+  set "UPD=x"
   set /p UPD=  Obnovit kod iz GitHub? [Enter=da / 0=net]: 
-  if not "%UPD%"=="0" (
+  if "!UPD!"=="x" (
+    echo.
+    call "%APP_DIR%update.bat"
+    cd /d "%APP_DIR%"
+    echo.
+  ) else if not "!UPD!"=="0" (
     echo.
     call "%APP_DIR%update.bat"
     cd /d "%APP_DIR%"
@@ -119,8 +127,13 @@ if exist "%APP_DIR%update.bat" (
 )
 
 :: Sync changelog
+set "SYNC=x"
 set /p SYNC=  Sync changelog? [Enter=da / 0=net]: 
-if not "%SYNC%"=="0" (
+if "!SYNC!"=="x" (
+  echo.
+  "%PYTHON%" sync_changelog.py
+  echo.
+) else if not "!SYNC!"=="0" (
   echo.
   "%PYTHON%" sync_changelog.py
   echo.
