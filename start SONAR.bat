@@ -1,4 +1,5 @@
 @echo off
+setlocal enabledelayedexpansion
 chcp 65001 >nul
 cd /d "%~dp0"
 title SONAR
@@ -11,14 +12,13 @@ echo.
 reg add "HKCU\Software\Microsoft\Command Processor" /v DisableUNCCheck /t REG_DWORD /d 1 /f >nul 2>&1
 
 set "APP_DIR=%~dp0"
-if "%APP_DIR:~-1%"=="\" set "APP_DIR=%APP_DIR:~0,-1%"
 set "PYTHON="
 set "SITEPKG="
 
 :: [1] Ishchem Python
-if exist "%APP_DIR%\WPy\python313\python.exe" (
-  set "PYTHON=%APP_DIR%\WPy\python313\python.exe"
-  set "SITEPKG=%APP_DIR%\WPy\python313\Lib\site-packages"
+if exist "%APP_DIR%WPy\python313\python.exe" (
+  set "PYTHON=%APP_DIR%WPy\python313\python.exe"
+  set "SITEPKG=%APP_DIR%WPy\python313\Lib\site-packages"
 )
 
 if defined PYTHON goto :python_found
@@ -40,12 +40,12 @@ if "%PY_CHOICE%"=="2" goto :manual_path
 goto :quit
 
 :run_install
-if exist "%APP_DIR%\install.bat" (
+if exist "%APP_DIR%install.bat" (
   echo.
-  call "%APP_DIR%\install.bat"
-  if exist "%APP_DIR%\WPy\python313\python.exe" (
-    set "PYTHON=%APP_DIR%\WPy\python313\python.exe"
-    set "SITEPKG=%APP_DIR%\WPy\python313\Lib\site-packages"
+  call "%APP_DIR%install.bat"
+  if exist "%APP_DIR%WPy\python313\python.exe" (
+    set "PYTHON=%APP_DIR%WPy\python313\python.exe"
+    set "SITEPKG=%APP_DIR%WPy\python313\Lib\site-packages"
     goto :python_found
   )
 ) else (
@@ -60,12 +60,12 @@ echo  Primer: C:\Python313\python.exe
 echo.
 set "MANUAL_PY="
 set /p MANUAL_PY=  Put: 
-if exist "%MANUAL_PY%" (
-  set "PYTHON=%MANUAL_PY%"
+if exist "!MANUAL_PY!" (
+  set "PYTHON=!MANUAL_PY!"
   set "SITEPKG="
   goto :python_found
 )
-echo  [OSHIBKA] Fayl ne nayden: %MANUAL_PY%
+echo  [OSHIBKA] Fayl ne nayden: !MANUAL_PY!
 
 :no_python
 echo.
@@ -85,10 +85,10 @@ del /f /q "%SITEPKG%\distutils-precedence.pth" 2>nul
 
 :: Bekap BD
 cd /d "%APP_DIR%"
-if not exist "%APP_DIR%\db\backups" mkdir "%APP_DIR%\db\backups"
-if exist "%APP_DIR%\db\database.db" (
+if not exist "%APP_DIR%db\backups" mkdir "%APP_DIR%db\backups"
+if exist "%APP_DIR%db\database.db" (
   set "BKDATE=%date:~6,4%%date:~3,2%%date:~0,2%"
-  xcopy /Y /I "%APP_DIR%\db\database.db" "%APP_DIR%\db\backups\database_%BKDATE%.db*" >nul
+  xcopy /Y /I "%APP_DIR%db\database.db" "%APP_DIR%db\backups\database_%BKDATE%.db*" >nul
   echo  Bekap: db\backups\database_%BKDATE%.db
 ) else (
   echo  [WARN] db\database.db ne nayden
@@ -108,11 +108,11 @@ echo  Health check OK.
 echo.
 
 :: Obnovlenie koda
-if exist "%APP_DIR%\update.bat" (
+if exist "%APP_DIR%update.bat" (
   set /p UPD=  Obnovit kod iz GitHub? [Enter=da / 0=net]: 
   if not "%UPD%"=="0" (
     echo.
-    call "%APP_DIR%\update.bat"
+    call "%APP_DIR%update.bat"
     cd /d "%APP_DIR%"
     echo.
   )
