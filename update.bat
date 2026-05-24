@@ -10,16 +10,23 @@ set "APP_DIR=%~dp0"
 set "UPDATER=%APP_DIR%_updater.py"
 set "PYTHON="
 
-:: [1] Ищем рядом
+:: [1] Ищем WPy рядом с update.bat (основной вариант)
 for /d %%A in ("%APP_DIR%WPy\python-*.amd64") do (
   if exist "%%A\python.exe" set "PYTHON=%%A\python.exe"
 )
 
-:: [2] Fallback: LandApp.bacup
+:: [2] Ищем WPy в соседних папках (любое имя — SONAR.Bac, LandApp.bacup и т.п.)
 if not defined PYTHON (
-  for /d %%A in ("%APP_DIR%..\LandApp.bacup\WPy\python-*.amd64") do (
-    if exist "%%A\python.exe" set "PYTHON=%%A\python.exe"
+  for /d %%B in ("%APP_DIR%..\") do (
+    for /d %%A in ("%%B\WPy\python-*.amd64") do (
+      if exist "%%A\python.exe" set "PYTHON=%%A\python.exe"
+    )
   )
+)
+
+:: [3] Fallback: системный Python
+if not defined PYTHON (
+  where python >nul 2>&1 && set "PYTHON=python"
 )
 
 echo.
@@ -29,7 +36,8 @@ echo  ================================================
 echo.
 
 if not defined PYTHON (
-  echo [ОШИБКА] Python не найден ни рядом, ни в LandApp.bacup.
+  echo  [ОШИБКА] Python не найден.
+  echo  Убедись что папка WPy находится рядом с SONAR.
   pause
   exit /b 1
 )
