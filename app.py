@@ -389,7 +389,8 @@ from export_routes   import report_bp
 from info_routes     import misc_bp
 from okved_admin     import okved_bp
 from okved_api       import okved_api_bp
-from settings_routes import settings_bp  # feat #10
+from settings_routes import settings_bp   # feat #10
+from preview_routes  import preview_bp    # feat #6 hover-popover
 
 app.register_blueprint(okved_bp)
 app.register_blueprint(okved_api_bp)
@@ -398,7 +399,8 @@ app.register_blueprint(requests_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(report_bp)
 app.register_blueprint(misc_bp)
-app.register_blueprint(settings_bp)  # feat #10
+app.register_blueprint(settings_bp)   # feat #10
+app.register_blueprint(preview_bp)    # feat #6 hover-popover
 
 if __name__ == '__main__':
     init_db()
