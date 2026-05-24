@@ -1,3 +1,9 @@
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║                         _updater.py                                     ║
+# ║  Скачивает обновления SONAR с GitHub, не трогая БД и файлы              ║
+# ║  пользователя.                                                           ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+
 import urllib.request
 import urllib.parse
 import urllib.error
@@ -14,9 +20,41 @@ API_BASE   = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}"
 
 BAT_NAME = "start SONAR.bat"
 
-PROTECTED = {"db", "uploads", "reports", "WPy", "Bacup",
-             "_updater.py", "update.bat", ".env",
-             "database.db", "database.db-shm", "database.db-wal"}
+# ─── Папки и файлы, которые НИКОГДА не обновляются с GitHub ──────────────────
+# Верхнеуровневые имена (папки целиком)
+PROTECTED_DIRS = {"uploads", "reports", "WPy", "Bacup", "db"}
+
+# Конкретные файлы (верхнего уровня)
+PROTECTED_FILES = {"_updater.py", "update.bat", ".env"}
+
+
+def should_skip(path: str) -> bool:
+    """
+    Возвращает True, если файл/папку НЕ нужно обновлять с GitHub.
+
+    Защищает:
+    - всю папку db/ (включая db_template.db — её обновлять не надо,
+      она меняется только когда разработчик выпустил новую структуру)
+    - боевую database.db в любом месте на всякий случай
+    - папки с пользовательскими данными: uploads/, reports/, WPy/, Bacup/
+    - служебные файлы: _updater.py, update.bat, .env
+    """
+    p = path.replace("\\", "/").strip("/")
+
+    # Верхнеуровневая папка
+    top = p.split("/")[0]
+    if top in PROTECTED_DIRS:
+        return True
+    if top in PROTECTED_FILES:
+        return True
+
+    # Дополнительная защита: database.db в любом месте
+    basename = os.path.basename(p)
+    if basename in {"database.db", "database.db-wal", "database.db-shm"}:
+        return True
+
+    return False
+
 
 def load_token():
     env_path = os.path.join(BASE_DIR, ".env")
@@ -101,10 +139,10 @@ def load_changelog():
         cl = ns.get("CHANGELOG", [])
         if not cl:
             return None, None
-        latest = cl[0]
+        latest  = cl[0]
         version = latest.get("version", "")
         changes = latest.get("changes", [])
-        body = "\n".join(f"- {c}" for c in changes)
+        body    = "\n".join(f"- {c}" for c in changes)
         return version, body
     except Exception as e:
         print(f"  [Внимание] Не удалось прочитать changelog.py: {e}")
@@ -148,7 +186,7 @@ def ensure_github_release():
         }
     )
     if status == 201:
-        print(f"  [Релиз] v{tag} успешно создан: {resp.get('html_url', '')}")
+        print(f"  [Релиз] {tag} успешно создан: {resp.get('html_url', '')}")
     else:
         msg = resp.get("message", "неизвестная ошибка")
         print(f"  [Релиз] Не удалось создать {tag}: {msg}")
@@ -190,8 +228,8 @@ def main():
         path      = item["path"]
         item_type = item["type"]
 
-        top_level = path.split("/")[0]
-        if top_level in PROTECTED:
+        # ── Проверка защищённых путей ────────────────────────────────────────
+        if should_skip(path):
             skipped += 1
             continue
 
@@ -236,7 +274,6 @@ def main():
         print("  [!] start SONAR.bat был обновлён.")
         print("  [!] Закрой это окно и запусти start SONAR.bat заново вручную.")
         print()
-        # Возвращаем 0 — НЕ запускаем второе окно
         sys.exit(0)
 
 if __name__ == "__main__":
