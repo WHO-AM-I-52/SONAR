@@ -2,7 +2,7 @@
 {# ╔══════════════════════════════════════════════════════════════╗ #}
 {# ║                        base.html                            ║ #}
 {# ║  Базовый шаблон приложения "Подбор ЗУ — НО"                 ║ #}
-{# ║  v2.4: fix session.fullname→full_name, role→get('role')       ║ #}
+{# ║  v2.5: GlobalSearch в топбаре (дропдаун + страница /search) ║ #}
 {# ╚══════════════════════════════════════════════════════════════╝ #}
 <html lang="ru">
 <head>
@@ -46,6 +46,33 @@
     .topbar .dropdown-toggle { background:rgba(255,193,7,.25); border-radius:6px; padding:4px 10px; color:#fff; text-decoration:none; display:flex; align-items:center; gap:6px; font-size:13px; }
     .topbar .dropdown-toggle:hover { background:rgba(255,193,7,.4); }
 
+    /* ─── GlobalSearch ─────────────────────────────────────────── */
+    .gs-wrap { position:relative; flex:1; max-width:380px; margin:0 8px; }
+    .gs-input { width:100%; background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.25); border-radius:8px; padding:5px 36px 5px 12px; color:#fff; font-size:13px; outline:none; transition:background .2s,border .2s; }
+    .gs-input::placeholder { color:rgba(255,255,255,.55); }
+    .gs-input:focus { background:rgba(255,255,255,.25); border-color:rgba(255,255,255,.5); }
+    .gs-icon { position:absolute; right:10px; top:50%; transform:translateY(-50%); color:rgba(255,255,255,.6); pointer-events:none; font-size:15px; }
+    .gs-dropdown { position:absolute; top:calc(100% + 6px); left:0; right:0; background:#fff; border-radius:8px; box-shadow:0 8px 32px rgba(0,0,0,.18); z-index:2000; overflow:hidden; display:none; }
+    .gs-dropdown.show { display:block; }
+    .gs-item { display:flex; align-items:center; gap:10px; padding:8px 12px; cursor:pointer; border-bottom:1px solid #f0f0f0; text-decoration:none; color:#212529; transition:background .12s; }
+    .gs-item:last-child { border-bottom:none; }
+    .gs-item:hover, .gs-item.gs-active { background:#f0f6fa; }
+    .gs-item-left { flex:1; min-width:0; }
+    .gs-item-num { font-weight:700; font-size:12px; color:#1B5E7B; }
+    .gs-item-name { font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .gs-item-meta { font-size:11px; color:#6c757d; }
+    .gs-item-badge { flex-shrink:0; font-size:10px; }
+    .gs-footer { padding:8px 12px; text-align:center; background:#f8f9fa; font-size:12px; color:#1B5E7B; cursor:pointer; font-weight:600; }
+    .gs-footer:hover { background:#e9f2f7; }
+    .gs-empty { padding:14px 12px; text-align:center; color:#6c757d; font-size:13px; }
+    .gs-loading { padding:14px 12px; text-align:center; color:#6c757d; font-size:13px; }
+    body[data-theme="dark"] .gs-dropdown { background:#1a1d27; box-shadow:0 8px 32px rgba(0,0,0,.5); }
+    body[data-theme="dark"] .gs-item { color:#e2e8f0; border-bottom-color:#2d3348; }
+    body[data-theme="dark"] .gs-item:hover, body[data-theme="dark"] .gs-item.gs-active { background:#252a40; }
+    body[data-theme="dark"] .gs-footer { background:#22263a; color:#60a5fa; }
+    body[data-theme="dark"] .gs-footer:hover { background:#2d3348; }
+    body[data-theme="dark"] .gs-empty, body[data-theme="dark"] .gs-loading { color:#94a3b8; }
+
     .sidebar { position:fixed; top:var(--topbar-h); left:0; bottom:0; width:var(--sb-width); background:#1B5E7B; z-index:1040; display:flex; flex-direction:column; transition:width .25s ease; overflow:hidden; }
     body.sb-col .sidebar { width:var(--sb-col); }
     .sb-nav { flex:1; overflow-y:auto; overflow-x:hidden; padding:8px 0; }
@@ -70,6 +97,7 @@
       body.sb-open .sidebar { transform:translateX(0); }
       body.sb-open .sb-overlay { display:block; }
       .page-wrap { margin-left:0 !important; }
+      .gs-wrap { max-width:140px; }
     }
 
     .sb-online { padding:10px 16px 12px; border-top:1px solid rgba(255,255,255,.1); display:flex; align-items:center; gap:8px; white-space:nowrap; overflow:hidden; }
@@ -162,6 +190,19 @@
     <i class="bi bi-map"></i> Подбор ЗУ
     <span style="font-size:10px;opacity:.7;font-weight:400" class="ms-1">v{{ app_version }}</span>
   </a>
+
+  {% if 'user_id' in session %}
+  {# ─── GlobalSearch ─────────────────────────────────────────── #}
+  <div class="gs-wrap" id="gsWrap">
+    <input type="text" class="gs-input" id="gsInput"
+           placeholder="Поиск обращений…"
+           autocomplete="off" spellcheck="false"
+           aria-label="Глобальный поиск">
+    <i class="bi bi-search gs-icon"></i>
+    <div class="gs-dropdown" id="gsDropdown"></div>
+  </div>
+  {% endif %}
+
   <div class="topbar-right">
     {% if 'user_id' in session %}
     <div class="dropdown">
@@ -360,6 +401,127 @@
   setTimeout(function(){ fetchOnline(); setInterval(fetchOnline, 60000); }, 2000);
 })();
 </script>
+
+{# ─── GlobalSearch JS ───────────────────────────────────────── #}
+{% if 'user_id' in session %}
+<script>
+(function(){
+  var input    = document.getElementById('gsInput');
+  var dropdown = document.getElementById('gsDropdown');
+  if (!input) return;
+
+  var timer = null;
+  var activeIdx = -1;
+  var currentItems = [];
+  var lastQ = '';
+
+  var STATUS_MAP = {
+    'draft':    {text:'Черновик',    cls:'bg-secondary'},
+    'review':   {text:'Рассмотрение',cls:'bg-warning text-dark'},
+    'accepted': {text:'Принято',     cls:'bg-primary'},
+    'answered': {text:'Отвечено',    cls:'bg-success'},
+  };
+
+  function showDropdown(html){
+    dropdown.innerHTML = html;
+    dropdown.classList.add('show');
+    activeIdx = -1;
+    currentItems = dropdown.querySelectorAll('.gs-item[data-url]');
+  }
+
+  function hideDropdown(){
+    dropdown.classList.remove('show');
+    dropdown.innerHTML = '';
+    activeIdx = -1;
+  }
+
+  function goToSearch(q){
+    window.location.href = '/search?q=' + encodeURIComponent(q);
+  }
+
+  function renderResults(data){
+    if (!data.results.length){
+      showDropdown('<div class="gs-empty"><i class="bi bi-search me-1"></i>Ничего не найдено</div>');
+      return;
+    }
+    var html = '';
+    data.results.forEach(function(r){
+      var s = STATUS_MAP[r.status] || {text: r.status, cls:'bg-light text-dark'};
+      var meta = [];
+      if (r.inn)     meta.push('ИНН ' + r.inn);
+      if (r.project) meta.push(r.project);
+      if (r.match_label) meta.push('<span style="color:#1B5E7B">по: ' + r.match_label + '</span>');
+      html += '<a class="gs-item" href="' + r.url + '" data-url="' + r.url + '">' +
+        '<div class="gs-item-left">' +
+          '<div class="gs-item-num">' + r.number + '</div>' +
+          '<div class="gs-item-name">' + r.name + '</div>' +
+          (meta.length ? '<div class="gs-item-meta">' + meta.join(' · ') + '</div>' : '') +
+        '</div>' +
+        '<span class="badge ' + s.cls + ' gs-item-badge">' + s.text + '</span>' +
+      '</a>';
+    });
+    html += '<div class="gs-footer" id="gsFooter">Показать все результаты</div>';
+    showDropdown(html);
+    document.getElementById('gsFooter').addEventListener('click', function(){
+      goToSearch(lastQ);
+    });
+  }
+
+  function doSearch(q){
+    lastQ = q;
+    showDropdown('<div class="gs-loading"><i class="bi bi-hourglass-split me-1"></i>Поиск…</div>');
+    fetch('/api/search?q=' + encodeURIComponent(q), {credentials:'same-origin'})
+      .then(function(r){ return r.json(); })
+      .then(renderResults)
+      .catch(function(){ hideDropdown(); });
+  }
+
+  input.addEventListener('input', function(){
+    var q = input.value.trim();
+    clearTimeout(timer);
+    if (q.length < 2){ hideDropdown(); return; }
+    timer = setTimeout(function(){ doSearch(q); }, 280);
+  });
+
+  input.addEventListener('keydown', function(e){
+    var items = currentItems;
+    if (e.key === 'ArrowDown'){
+      e.preventDefault();
+      activeIdx = Math.min(activeIdx + 1, items.length - 1);
+      items.forEach(function(el, i){ el.classList.toggle('gs-active', i === activeIdx); });
+    } else if (e.key === 'ArrowUp'){
+      e.preventDefault();
+      activeIdx = Math.max(activeIdx - 1, 0);
+      items.forEach(function(el, i){ el.classList.toggle('gs-active', i === activeIdx); });
+    } else if (e.key === 'Enter'){
+      e.preventDefault();
+      if (activeIdx >= 0 && items[activeIdx]){
+        window.location.href = items[activeIdx].getAttribute('data-url');
+      } else if (input.value.trim().length >= 2){
+        goToSearch(input.value.trim());
+      }
+    } else if (e.key === 'Escape'){
+      hideDropdown();
+      input.blur();
+    }
+  });
+
+  // Закрыть при клике вне
+  document.addEventListener('click', function(e){
+    if (!document.getElementById('gsWrap').contains(e.target)) hideDropdown();
+  });
+
+  // Фокус по Ctrl+K / Cmd+K
+  document.addEventListener('keydown', function(e){
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k'){
+      e.preventDefault();
+      input.focus();
+      input.select();
+    }
+  });
+})();
+</script>
+{% endif %}
 
 <div id="droneWidget" style="position:fixed;right:24px;bottom:24px;z-index:9999;opacity:0;transform:scale(0.8);transition:opacity 0.4s,transform 0.4s;pointer-events:none;">
   <div class="demo">

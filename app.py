@@ -1,6 +1,6 @@
 # ╔══════════════════════════════════════════════════════════════╗
 # ║ app.py                                                       ║
-# ║ v2.0: гибкие права, журнал входов, смена пароля             ║
+# ║ v2.1: GlobalSearch blueprint зарегистрирован                ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 import os
@@ -19,7 +19,9 @@ app.secret_key = _secrets.token_hex(32)
 
 # ─── Blueprints ───────────────────────────────────────────────
 from phonebook_routes import phonebook_bp
+from search_routes    import search_bp
 app.register_blueprint(phonebook_bp)
+app.register_blueprint(search_bp)
 
 def init_db():
     conn = sqlite3.connect(DB_PATH, timeout=15)
@@ -321,14 +323,11 @@ def inject_globals():
     if session.get('user_id'):
         db = get_db()
 
-        # Счётчик непрочитанных уведомлений
         unread_count = db.execute(
             'SELECT COUNT(*) FROM notifications WHERE user_id=? AND is_read=0',
             (session['user_id'],)
         ).fetchone()[0]
 
-        # Счётчик активных обращений для badge в сайдбаре
-        # Показываем всё кроме закрытых (closed) и отклонённых (rejected)
         try:
             if session.get('role') == 'admin' or session.get('can_view_all'):
                 active_requests_count = db.execute(
