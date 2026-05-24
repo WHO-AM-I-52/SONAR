@@ -2,25 +2,17 @@
 {# ╔══════════════════════════════════════════════════════════════╗ #}
 {# ║                        base.html                            ║ #}
 {# ║  Базовый шаблон приложения "Подбор ЗУ — НО"                 ║ #}
-{# ║  Содержит:                                                   ║ #}
-{# ║  - Топбар (шапка с логотипом, меню пользователя)            ║ #}
-{# ║  - Сайдбар (боковое меню навигации, сворачиваемое)          ║ #}
-{# ║  - Flash-сообщения (уведомления после действий)             ║ #}
-{# ║  - Тёмный/светлый режим (localStorage)                      ║ #}
-{# ║  - Баннер "Соединение потеряно" (пинг каждые 10 сек)        ║ #}
-{# ║  - Drone Autosave Widget (автосохранение каждые 60 сек)     ║ #}
-{# ║  - Online users counter (опрос /api/online каждые 60 сек)   ║ #}
-{# ║  - Подвал с версией и контактом разработчика                ║ #}
+{# ║  v2.4: fix session.fullname→full_name, role→get('role')       ║ #}
 {# ╚══════════════════════════════════════════════════════════════╝ #}
 <html lang="ru">
 <head>
-  {# ─── МЕТА И ФАВИКОН ────────────────────────────────────────────── #}
+  {# ─── МЕТА И ФАВИКОН ────────────────────────────────────────── #}
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Подбор ЗУ — НО</title>
 
-  {# ─── ВНЕШНИЕ БИБЛИОТЕКИ (Bootstrap 5.3.2, Bootstrap Icons) ─────── #}
+  {# ─── ВНЕШНИЕ БИБЛИОТЕКИ (Bootstrap 5.3.2, Bootstrap Icons) ───── #}
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 
@@ -176,27 +168,27 @@
       <a href="#" class="dropdown-toggle" data-bs-toggle="dropdown">
         {% if session.get('is_impersonating') %}<i class="bi bi-eye-fill text-warning"></i>
         {% else %}<i class="bi bi-person-circle"></i>{% endif %}
-        {{ session.fullname }}
+        {{ session.get('full_name', session.get('username', '')) }}
         {% if session.get('is_impersonating') %}
-          <span class="badge ms-1" style="background:#ffc107;color:#000;font-size:9px">{{ session.role|upper }}</span>
-        {% elif session.role=='admin' %}
+          <span class="badge ms-1" style="background:#ffc107;color:#000;font-size:9px">{{ session.get('role','')|upper }}</span>
+        {% elif session.get('role')=='admin' %}
           <span class="badge bg-warning text-dark ms-1" style="font-size:9px">ADMIN</span>
         {% endif %}
       </a>
       <ul class="dropdown-menu dropdown-menu-end shadow" style="min-width:230px;font-size:13px">
         {% if session.get('is_impersonating') %}
           <li><span class="dropdown-item-text" style="font-size:11px;color:#856404"><i class="bi bi-eye-fill me-1"></i><strong>Режим просмотра</strong></span></li>
-          <li><span class="dropdown-item-text text-muted" style="font-size:12px"><strong>{{ session.fullname }}</strong><span class="badge bg-secondary ms-1">{{ session.role }}</span></span></li>
+          <li><span class="dropdown-item-text text-muted" style="font-size:12px"><strong>{{ session.get('full_name','') }}</strong><span class="badge bg-secondary ms-1">{{ session.get('role','') }}</span></span></li>
           <li><hr class="dropdown-divider my-1"></li>
-          <li><a class="dropdown-item text-success fw-bold" href="/impersonate/stop"><i class="bi bi-arrow-return-left me-2"></i>{{ session.get('original_fullname', 'Назад') }}</a></li>
+          <li><a class="dropdown-item text-success fw-bold" href="/impersonate/stop"><i class="bi bi-arrow-return-left me-2"></i>{{ session.get('original_full_name', session.get('original_fullname', 'Назад')) }}</a></li>
           <li><hr class="dropdown-divider my-1"></li>
         {% else %}
-          <li><span class="dropdown-item-text text-muted" style="font-size:11px"><i class="bi bi-person me-1"></i>{{ session.username }}</span></li>
-          {% if session.role=='admin' and users_for_impersonate %}
+          <li><span class="dropdown-item-text text-muted" style="font-size:11px"><i class="bi bi-person me-1"></i>{{ session.get('username','') }}</span></li>
+          {% if session.get('role')=='admin' and users_for_impersonate %}
             <li><hr class="dropdown-divider my-1"></li>
             <li><span class="dropdown-item-text text-muted" style="font-size:11px"><i class="bi bi-people me-1"></i>Войти как:</span></li>
             {% for u in users_for_impersonate %}
-            <li><a class="dropdown-item" href="/impersonate/{{ u.id }}"><i class="bi bi-person-fill-gear me-2 text-warning"></i>{{ u.fullname }}<span class="badge bg-secondary ms-1" style="font-size:10px">{{ u.role }}</span></a></li>
+            <li><a class="dropdown-item" href="/impersonate/{{ u.id }}"><i class="bi bi-person-fill-gear me-2 text-warning"></i>{{ u.full_name or u.fullname }}<span class="badge bg-secondary ms-1" style="font-size:10px">{{ u.role }}</span></a></li>
             {% endfor %}
           {% endif %}
           <li><hr class="dropdown-divider my-1"></li>
@@ -227,7 +219,7 @@
       <i class="bi bi-bell"></i><span class="sb-lbl">Уведомления</span>
       {% if unread_count > 0 %}<span class="sb-badge">{{ unread_count }}</span>{% endif %}
     </a>
-    {% if session.role=='admin' %}
+    {% if session.get('role')=='admin' %}
     <div class="sb-sep"></div>
     <div class="sb-cat">Администратор</div>
     <a href="/admin/classifiers" class="sb-link {{ 'active' if 'classifiers' in request.path }}"><i class="bi bi-tags"></i><span class="sb-lbl">Справочники</span></a>

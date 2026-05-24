@@ -3,48 +3,27 @@
 
 {# ═══════════════════════════════════════════════════════════════ #}
 {#   history.html — История изменений обращения                  #}
-{#   v2.3: fix pluralize → прямой текст, guard default+string    #}
+{#   v2.4: кнопка «Откатить» восстановлена (admin / can_rollback)      #}
 {# ═══════════════════════════════════════════════════════════════ #}
 
 <style>
-/* ─── Inline diff ──────────────────────────────────────────── */
 .diff-cell { font-size:.82rem; word-break:break-word; line-height:1.6; }
-.diff-del {
-  background:#ffeef0; color:#b91c1c;
-  text-decoration:line-through;
-  border-radius:3px; padding:0 2px;
-}
-.diff-ins {
-  background:#e6ffed; color:#15803d;
-  border-radius:3px; padding:0 2px;
-}
-.diff-eq { color:inherit; }
-
-/* ─── Collapsible ──────────────────────────────────────────── */
-.hist-header {
-  cursor:pointer; user-select:none;
-  transition:background .15s;
-  border-radius:6px 6px 0 0;
-}
+.diff-del { background:#ffeef0; color:#b91c1c; text-decoration:line-through; border-radius:3px; padding:0 2px; }
+.diff-ins { background:#e6ffed; color:#15803d; border-radius:3px; padding:0 2px; }
+.diff-eq  { color:inherit; }
+.hist-header { cursor:pointer; user-select:none; transition:background .15s; border-radius:6px 6px 0 0; }
 .hist-header:hover { background:rgba(0,0,0,.03); }
-.hist-chevron {
-  transition:transform .2s;
-  font-size:12px;
-  color:#6c757d;
-}
+.hist-chevron { transition:transform .2s; font-size:12px; color:#6c757d; }
 .hist-header.collapsed .hist-chevron { transform:rotate(-90deg); }
-
-/* ─── Таблица ──────────────────────────────────────────────── */
 .hist-table td { vertical-align:top; padding:.35rem .5rem !important; }
 .hist-table .field-col { width:28%; color:#6c757d; font-size:.8rem; }
-.hist-table .was-col  { width:36%; }
-.hist-table .now-col  { width:36%; }
+.hist-table .was-col   { width:36%; }
+.hist-table .now-col   { width:36%; }
 </style>
 
 {# ── ШАПКА ───────────────────────────────────────────────────── #}
 <div class="d-flex align-items-center mb-4 gap-2">
-  <a href="{{ url_for('requests.view_request', rid=rid) }}"
-     class="btn btn-sm btn-outline-secondary">
+  <a href="{{ url_for('requests.view_request', rid=rid) }}" class="btn btn-sm btn-outline-secondary">
     <i class="bi bi-arrow-left"></i>
   </a>
   <h5 class="mb-0" style="color:#1B5E7B">
@@ -71,16 +50,13 @@
 {# ── СПИСОК ЗАПИСЕЙ ──────────────────────────────────────────── #}
 {% else %}
 {% for entry in history %}
-
 {% set card_id = 'hist-' ~ loop.index %}
-<div class="card mb-3 border-start border-4
-  {% if entry.action == 'rollback' %}border-danger{% else %}border-warning{% endif %}"
-  style="box-shadow:0 1px 4px rgba(0,0,0,.07)">
+<div class="card mb-3 border-start border-4 {% if entry.action == 'rollback' %}border-danger{% else %}border-warning{% endif %}"
+     style="box-shadow:0 1px 4px rgba(0,0,0,.07)">
 
-  {# ── ЗАГОЛОВОК — кликабельный ─────────────────────────────── #}
+  {# ── ЗАГОЛОВОК ─────────────────────────────────────────────── #}
   <div class="card-body py-2 px-3 hist-header {% if not loop.first %}collapsed{% endif %}"
-       data-target="{{ card_id }}"
-       onclick="histToggle(this)">
+       data-target="{{ card_id }}" onclick="histToggle(this)">
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
       <div>
         <strong>{{ entry.user }}</strong>
@@ -93,30 +69,39 @@
           <span class="badge bg-warning text-dark ms-2">Правка</span>
         {% endif %}
         {% if entry.changes %}
-          <span class="badge bg-secondary ms-1" style="font-size:.7rem">
-            {{ entry.changes|length }} полей
-          </span>
+          <span class="badge bg-secondary ms-1" style="font-size:.7rem">{{ entry.changes|length }} полей</span>
         {% endif %}
       </div>
-      <i class="bi bi-chevron-down hist-chevron"></i>
+      <div class="d-flex align-items-center gap-2">
+        {# ── КНОПКА ОТКАТИТЬ ───────────────────────────────── #}
+        {% if perms.can_rollback and entry.action != 'rollback' %}
+        <form method="post"
+              action="{{ url_for('requests.rollback_request', rid=rid, hid=entry.id) }}"
+              class="d-inline"
+              onclick="event.stopPropagation()">
+          <button type="submit"
+                  class="btn btn-sm btn-outline-danger py-0 px-2"
+                  style="font-size:.75rem"
+                  onclick="return confirm('Откатить обращение к этой версии?');">
+            <i class="bi bi-arrow-counterclockwise me-1"></i>Откатить
+          </button>
+        </form>
+        {% endif %}
+        <i class="bi bi-chevron-down hist-chevron"></i>
+      </div>
     </div>
   </div>
 
-  {# ── ТЕЛО — сворачиваемое ─────────────────────────────────── #}
-  <div id="{{ card_id }}"
-       style="{% if not loop.first %}display:none{% endif %}">
+  {# ── ТЕЛО ─────────────────────────────────────────────────── #}
+  <div id="{{ card_id }}" style="{% if not loop.first %}display:none{% endif %}">
     {% if entry.changes %}
     <div class="px-3 pb-3 pt-1">
       <table class="table table-sm table-bordered mb-0 hist-table">
         <thead class="table-light">
           <tr>
             <th class="field-col">Поле</th>
-            <th class="was-col">
-              <i class="bi bi-x-circle text-danger me-1"></i>Было
-            </th>
-            <th class="now-col">
-              <i class="bi bi-check-circle text-success me-1"></i>Стало
-            </th>
+            <th class="was-col"><i class="bi bi-x-circle text-danger me-1"></i>Было</th>
+            <th class="now-col"><i class="bi bi-check-circle text-success me-1"></i>Стало</th>
           </tr>
         </thead>
         <tbody>
@@ -147,11 +132,8 @@
 
 {% block scripts %}
 <script>
-/* ────────────────────────────────────────────────────────────
-   COLLAPSIBLE
-──────────────────────────────────────────────────────────── */
 function histToggle(header) {
-  var id   = header.getAttribute('data-target');
+  var id = header.getAttribute('data-target');
   var body = document.getElementById(id);
   if (!body) return;
   var hidden = body.style.display === 'none';
@@ -159,78 +141,45 @@ function histToggle(header) {
   header.classList.toggle('collapsed', !hidden);
 }
 
-/* ────────────────────────────────────────────────────────────
-   WORD-DIFF ENGINE  (LCS, пословный)
-──────────────────────────────────────────────────────────── */
-function tokenize(str) {
-  return str.split(/(\s+)/);
-}
+function tokenize(str) { return str.split(/(\s+)/); }
 
 function lcs(a, b) {
-  var m = a.length, n = b.length;
-  var dp = [];
-  for (var i = 0; i <= m; i++) { dp[i] = new Array(n + 1).fill(0); }
-  for (var i = 1; i <= m; i++)
-    for (var j = 1; j <= n; j++)
-      dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] + 1
-                                     : Math.max(dp[i-1][j], dp[i][j-1]);
-  var ops = [], i = m, j = n;
+  var m = a.length, n = b.length, dp = [], i, j;
+  for (i = 0; i <= m; i++) { dp[i] = new Array(n + 1).fill(0); }
+  for (i = 1; i <= m; i++)
+    for (j = 1; j <= n; j++)
+      dp[i][j] = a[i-1]===b[j-1] ? dp[i-1][j-1]+1 : Math.max(dp[i-1][j],dp[i][j-1]);
+  var ops = []; i = m; j = n;
   while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && a[i-1] === b[j-1]) {
-      ops.unshift({type:'eq', val:a[i-1]}); i--; j--;
-    } else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) {
-      ops.unshift({type:'ins', val:b[j-1]}); j--;
-    } else {
-      ops.unshift({type:'del', val:a[i-1]}); i--;
-    }
+    if (i>0 && j>0 && a[i-1]===b[j-1]) { ops.unshift({type:'eq',val:a[i-1]}); i--; j--; }
+    else if (j>0 && (i===0 || dp[i][j-1]>=dp[i-1][j])) { ops.unshift({type:'ins',val:b[j-1]}); j--; }
+    else { ops.unshift({type:'del',val:a[i-1]}); i--; }
   }
   return ops;
 }
 
-function esc(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
+function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 function renderDiff(wasStr, nowStr) {
   var ops = lcs(tokenize(wasStr), tokenize(nowStr));
-  var wasHtml = '', nowHtml = '';
-  ops.forEach(function(op) {
-    if (op.type === 'eq') {
-      wasHtml += '<span class="diff-eq">' + esc(op.val) + '</span>';
-      nowHtml += '<span class="diff-eq">' + esc(op.val) + '</span>';
-    } else if (op.type === 'del') {
-      wasHtml += '<span class="diff-del">' + esc(op.val) + '</span>';
-    } else {
-      nowHtml += '<span class="diff-ins">' + esc(op.val) + '</span>';
-    }
+  var wasHtml='', nowHtml='';
+  ops.forEach(function(op){
+    if (op.type==='eq')  { wasHtml+='<span class="diff-eq">'+esc(op.val)+'</span>'; nowHtml+='<span class="diff-eq">'+esc(op.val)+'</span>'; }
+    else if (op.type==='del') { wasHtml+='<span class="diff-del">'+esc(op.val)+'</span>'; }
+    else { nowHtml+='<span class="diff-ins">'+esc(op.val)+'</span>'; }
   });
-  return { was: wasHtml, now: nowHtml };
+  return {was:wasHtml, now:nowHtml};
 }
 
-/* ────────────────────────────────────────────────────────────
-   ЗАПОЛНЕНИЕ DIFF В ТАБЛИЦЕ
-──────────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('tr').forEach(function(row) {
     var wasCell = row.querySelector('.was-col.diff-cell');
     var nowCell = row.querySelector('.now-col.diff-cell');
     if (!wasCell || !nowCell) return;
-
     var wasStr = wasCell.getAttribute('data-was') || '';
     var nowStr = wasCell.getAttribute('data-now') || '';
-
-    if (!wasStr && !nowStr) {
-      wasCell.textContent = '—';
-      nowCell.textContent = '—';
-      return;
-    }
-
-    if (wasStr === nowStr) {
-      wasCell.textContent = wasStr || '—';
-      nowCell.textContent = nowStr || '—';
-      return;
-    }
-
+    if (!wasStr && !nowStr) { wasCell.textContent='—'; nowCell.textContent='—'; return; }
+    if (wasStr === nowStr) { wasCell.textContent=wasStr||'—'; nowCell.textContent=nowStr||'—'; return; }
     var result = renderDiff(wasStr, nowStr);
     wasCell.innerHTML = result.was || '<span class="text-muted">—</span>';
     nowCell.innerHTML = result.now || '<span class="text-muted">—</span>';
