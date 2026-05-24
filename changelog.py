@@ -1,5 +1,15 @@
 CHANGELOG = [
     {
+        "version": "2.3.3",
+        "date": "25.05.2026",
+        "changes": [
+            "Hover-popover (#6): превью обращения при наведении на строку таблицы — номер, заявитель, статус, контакт, телефон, дата изменения",
+            "API-маршрут /api/request/<id>/preview — возвращает JSON с краткими данными обращения",
+            "preview_routes.py: новый Blueprint preview_bp, зарегистрирован в app.py",
+            "Исправлен TypeError в Bootstrap tooltip.js:534 (_isWithActiveTrigger): DOM-элемент popover удаляется вручную перед dispose(), анимация hide() не запускается",
+        ],
+    },
+    {
         "version": "2.3.2",
         "date": "25.05.2026",
         "changes": [
@@ -234,6 +244,17 @@ CHANGELOG = [
 ]
 
 ROADMAP = [
+    {
+        "version": "v2.3.3",
+        "title": "Hover-popover + hotfix Bootstrap",
+        "status": "done",
+        "eta": "май 2026",
+        "points": [
+            "Превью обращения при наведении на строку таблицы",
+            "API /api/request/<id>/preview (Blueprint preview_bp)",
+            "Исправлен TypeError в Bootstrap tooltip.js (_isWithActiveTrigger)",
+        ],
+    },
     {
         "version": "v2.3.2",
         "title": "SettingsMenu — настройки профиля",
