@@ -400,7 +400,11 @@
     <div class="sb-cat">Навигация</div>
 
     <a href="/" class="sb-link {{ 'active' if request.path=='/' }}">
-      <i class="bi bi-list-ul"></i><span class="sb-lbl">Обращения</span>
+      <i class="bi bi-list-ul"></i>
+      <span class="sb-lbl">Обращения</span>
+      {% if active_requests_count > 0 %}
+        <span class="sb-badge">{{ active_requests_count }}</span>
+      {% endif %}
     </a>
     <a href="/dashboard" class="sb-link {{ 'active' if request.path=='/dashboard' }}">
       <i class="bi bi-bar-chart-line"></i><span class="sb-lbl">Дашборд</span>

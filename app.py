@@ -244,7 +244,7 @@ CREATE INDEX IF NOT EXISTS idx_ll_event ON login_log(event);
         UPDATE users SET can_create=1, can_export=1, can_view_all=1
         WHERE role='employee' AND can_create=0
     """)
-    
+
     # activity_log (v2.0)
     conn.executescript("""
 CREATE TABLE IF NOT EXISTS activity_log (
@@ -260,7 +260,7 @@ CREATE INDEX IF NOT EXISTS idx_al_request ON activity_log(request_id);
 CREATE INDEX IF NOT EXISTS idx_al_action  ON activity_log(action);
 """)
 
-    # phonebook_orgs (v2.1.0)  ← 4 пробела!
+    # phonebook_orgs (v2.1.0)
     conn.executescript("""
 CREATE TABLE IF NOT EXISTS phonebook_orgs (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -316,12 +316,33 @@ def migrate_districts():
 def inject_globals():
     users_for_impersonate = []
     unread_count = 0
+    active_requests_count = 0
+
     if session.get('user_id'):
         db = get_db()
+
+        # Счётчик непрочитанных уведомлений
         unread_count = db.execute(
             'SELECT COUNT(*) FROM notifications WHERE user_id=? AND is_read=0',
             (session['user_id'],)
         ).fetchone()[0]
+
+        # Счётчик активных обращений для badge в сайдбаре
+        # Показываем всё кроме закрытых (closed) и отклонённых (rejected)
+        try:
+            if session.get('role') == 'admin' or session.get('can_view_all'):
+                active_requests_count = db.execute(
+                    "SELECT COUNT(*) FROM requests WHERE status NOT IN ('closed','rejected')"
+                ).fetchone()[0]
+            else:
+                active_requests_count = db.execute(
+                    "SELECT COUNT(*) FROM requests "
+                    "WHERE status NOT IN ('closed','rejected') AND created_by=?",
+                    (session['user_id'],)
+                ).fetchone()[0]
+        except Exception:
+            active_requests_count = 0
+
         if session.get('role') == 'admin':
             users_for_impersonate = db.execute(
                 'SELECT id,full_name,role FROM users WHERE id!=? ORDER BY full_name',
@@ -337,6 +358,7 @@ def inject_globals():
         app_name='InvestLand',
         app_subtitle='Инвестиционный земельный модуль Нижегородской области',
         unread_count=unread_count,
+        active_requests_count=active_requests_count,
         users_for_impersonate=users_for_impersonate,
         perms=perms,
         ALL_PERMISSIONS=ALL_PERMISSIONS,
