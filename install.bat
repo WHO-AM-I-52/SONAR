@@ -19,13 +19,12 @@ set "SITEPKG="
 :: SHAG 1: Ishchem Python
 :: ============================================================
 echo [1/5] Poisk Python...
-echo  DEBUG APP_DIR=[%APP_DIR%]
 
 if exist "%APP_DIR%WPy\python313\python.exe" (
   set "PYTHON=%APP_DIR%WPy\python313\python.exe"
   set "SITEPKG=%APP_DIR%WPy\python313\Lib\site-packages"
   echo  OK WPy\python313 (uzhe est)
-  goto :install_deps
+  goto :fix_pth
 )
 
 if exist "%APP_DIR%tools\python313\python.exe" (
@@ -38,12 +37,10 @@ if exist "%APP_DIR%tools\python313\python.exe" (
     pause
     exit /b 1
   )
-  echo  Dobavlyayu put v python313._pth...
-  echo %APP_DIR%>> "%APP_DIR%WPy\python313\python313._pth"
   set "PYTHON=%APP_DIR%WPy\python313\python.exe"
   set "SITEPKG=%APP_DIR%WPy\python313\Lib\site-packages"
-  echo  OK: Python skopirovan i nastroyen.
-  goto :install_deps
+  echo  OK: Python skopirovan.
+  goto :fix_pth
 )
 
 echo.
@@ -78,12 +75,20 @@ pause
 exit /b 1
 
 :: ============================================================
+:: SHAG 1.5: Sozdaem pravilnyy _pth
+:: ============================================================
+:fix_pth
+echo  Nastroyka python313._pth...
+powershell -Command "$lines = @('%APP_DIR%WPy\python313\Lib','%APP_DIR%WPy\python313\Lib\site-packages','%APP_DIR%','.'); Set-Content '%APP_DIR%WPy\python313\python313._pth' $lines"
+echo .>> "%APP_DIR%WPy\python313\python313._pth"
+echo  OK: _pth nastroyen.
+
+:: ============================================================
 :: SHAG 2: Proverka pip
 :: ============================================================
 :install_deps
 echo.
 echo [2/5] Proverka pip...
-echo  DEBUG PYTHON=[%PYTHON%]
 
 set PYTHONUTF8=1
 "%PYTHON%" -m pip --version >nul 2>&1
@@ -111,7 +116,11 @@ if not exist "%APP_DIR%requirements.txt" (
   goto :create_dirs
 )
 
-"%PYTHON%" -m pip install --quiet -r "%APP_DIR%requirements.txt"
+if defined SITEPKG (
+  "%PYTHON%" -m pip install -r "%APP_DIR%requirements.txt" --target "%SITEPKG%" --quiet
+) else (
+  "%PYTHON%" -m pip install -r "%APP_DIR%requirements.txt" --quiet
+)
 if errorlevel 1 (
   echo  [OSHIBKA] Ne udalos ustanovit zavisimosti.
   echo  Proverte podklyucheniye k Internetu.

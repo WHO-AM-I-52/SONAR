@@ -6,3 +6,4 @@ pytesseract
 Pillow
 requests
 python-dotenv
+pdfplumber
