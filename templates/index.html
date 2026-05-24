@@ -191,7 +191,8 @@
       {% else %}
         {% set overdue = false %}
       {% endif %}
-      <tr class="{{ 'table-danger' if overdue else '' }}">
+      {# data-preview-id используется JS для hover-popover (фича #6) #}
+      <tr class="{{ 'table-danger' if overdue else '' }}" data-preview-id="{{ r.id }}">
         <td class="text-center">
           <form method="post" action="{{ url_for('requests.toggle_favorite', rid=r.id) }}">
             <button type="submit" class="btn btn-link p-0 border-0"
@@ -271,4 +272,125 @@
     Всего записей: <strong>{{ requests|length }}</strong>
   </div>
 </div>
+
+{# ===== HOVER-POPOVER (фича #6) ===== #}
+<script>
+(function () {
+  'use strict';
+
+  /* Карта цветов статусов */
+  const STATUS_COLOR = {
+    draft:    '#6c757d',
+    review:   '#fd7e14',
+    accepted: '#0d6efd',
+    answered: '#198754',
+  };
+
+  /* Кэш уже загруженных превью */
+  const cache = {};
+
+  /* Активный popover + его строка */
+  let activePopover = null;
+  let activeRow     = null;
+
+  /* Строим HTML-содержимое popover */
+  function buildContent(d) {
+    const color = STATUS_COLOR[d.status] || '#333';
+    return [
+      `<table class="table table-sm mb-0" style="font-size:12px;min-width:220px">`,
+      `<tr><th class="text-muted fw-normal pe-2" style="white-space:nowrap">№</th>`,
+      `<td class="fw-bold">${d.number}</td></tr>`,
+      `<tr><th class="text-muted fw-normal">Заявитель</th>`,
+      `<td>${d.applicant}</td></tr>`,
+      `<tr><th class="text-muted fw-normal">Статус</th>`,
+      `<td><span class="badge" style="background:${color}">${d.status_label}</span></td></tr>`,
+      `<tr><th class="text-muted fw-normal">Контакт</th>`,
+      `<td>${d.contact}</td></tr>`,
+      `<tr><th class="text-muted fw-normal">Тел.</th>`,
+      `<td>${d.phone}</td></tr>`,
+      `<tr><th class="text-muted fw-normal">Изменено</th>`,
+      `<td class="text-nowrap">${d.updated_at}</td></tr>`,
+      `</table>`,
+    ].join('');
+  }
+
+  /* Скрыть и уничтожить текущий popover */
+  function hidePopover() {
+    if (activePopover) {
+      activePopover.hide();
+      activePopover.dispose();
+      activePopover = null;
+    }
+    activeRow = null;
+  }
+
+  /* Показать popover на строке tr */
+  function showPopover(tr, data) {
+    if (activeRow === tr) return;   /* уже показан для этой строки */
+    hidePopover();
+    activeRow = tr;
+
+    /* Bootstrap 5: создаём popover программно */
+    activePopover = new bootstrap.Popover(tr, {
+      trigger:   'manual',
+      html:      true,
+      placement: 'auto',
+      title:     `<i class="bi bi-file-text me-1"></i>Превью обращения`,
+      content:   buildContent(data),
+      sanitize:  false,
+    });
+    activePopover.show();
+  }
+
+  /* Асинхронно загружаем данные и показываем popover */
+  async function loadAndShow(tr, rid) {
+    if (cache[rid]) {
+      showPopover(tr, cache[rid]);
+      return;
+    }
+    try {
+      const resp = await fetch(`/api/request/${rid}/preview`);
+      if (!resp.ok) return;
+      const data = await resp.json();
+      cache[rid] = data;
+      /* Проверяем: курсор ещё на этой строке? */
+      if (activeRow === tr) showPopover(tr, data);
+    } catch (e) {
+      /* тихо игнорируем сетевые ошибки */
+    }
+  }
+
+  /* Debounce-таймер */
+  let hoverTimer = null;
+
+  /* Навешиваем обработчики на все строки с data-preview-id */
+  document.querySelectorAll('tr[data-preview-id]').forEach(function (tr) {
+    const rid = tr.dataset.previewId;
+
+    tr.addEventListener('mouseenter', function () {
+      /* Помечаем строку как «активную под курсором» до загрузки */
+      activeRow = tr;
+      hoverTimer = setTimeout(function () {
+        loadAndShow(tr, rid);
+      }, 250);
+    });
+
+    tr.addEventListener('mouseleave', function () {
+      clearTimeout(hoverTimer);
+      /* Скрываем только если курсор не перешёл на сам popover */
+      setTimeout(function () {
+        const pop = document.querySelector('.popover:hover');
+        if (!pop) hidePopover();
+      }, 80);
+    });
+  });
+
+  /* Клик вне popover — скрываем */
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('.popover') && !e.target.closest('tr[data-preview-id]')) {
+      hidePopover();
+    }
+  });
+})();
+</script>
 {% endblock %}
