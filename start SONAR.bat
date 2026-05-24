@@ -1,10 +1,10 @@
 @echo off
 chcp 65001 >nul
 cd /d "%~dp0"
-title SONAR - Land App
+title SONAR
 
 echo ============================================
-echo  SONAR - Nizhny Novgorod
+echo  SONAR - Nizhegorodskaya oblast
 echo ============================================
 echo.
 
@@ -14,7 +14,9 @@ set "APP_DIR=%~dp0"
 set "PYTHON="
 set "SITEPKG="
 
-:: [1] Ishchem Python ryadom (WPy\ v papke LandApp)
+:: ============================================================
+:: [1] Ищем WPy рядом с этим файлом (основной вариант)
+:: ============================================================
 for /d %%A in ("%APP_DIR%WPy\python-*.amd64") do (
   if exist "%%A\python.exe" (
     set "PYTHON=%%A\python.exe"
@@ -22,27 +24,55 @@ for /d %%A in ("%APP_DIR%WPy\python-*.amd64") do (
   )
 )
 
-:: [2] Fallback: ishchem v LandApp.bacup
+:: ============================================================
+:: [2] Ищем WPy в любой соседней папке (любое имя: SONAR.Bac, backup и т.п.)
+:: ============================================================
 if not defined PYTHON (
-  for /d %%A in ("%APP_DIR%..\LandApp.bacup\WPy\python-*.amd64") do (
-    if exist "%%A\python.exe" (
-      set "PYTHON=%%A\python.exe"
-      set "SITEPKG=%%A\Lib\site-packages"
-      echo  [INFO] Python nayden v LandApp.bacup ^(fallback^)
+  for /d %%B in ("%APP_DIR%..\") do (
+    for /d %%A in ("%%B\WPy\python-*.amd64") do (
+      if exist "%%A\python.exe" (
+        set "PYTHON=%%A\python.exe"
+        set "SITEPKG=%%A\Lib\site-packages"
+        echo  [INFO] Python найден в соседней папке ^(fallback^)
+      )
     )
   )
 )
 
-:: [3] TODO: v budushchem -- install.bat skachayet WPy avtomaticheski
-:: if not defined PYTHON call "%APP_DIR%install.bat"
-
+:: ============================================================
+:: [3] Если WPy не найден — предлагаем запустить install.bat
+:: ============================================================
 if not defined PYTHON (
   echo.
-  echo  [ERROR] Python ne nayden!
+  echo  [ВНИМАНИЕ] Python не найден!
   echo.
-  echo  Varianty resheniya:
-  echo    1. Skopiruy WPy\ iz LandApp.bacup v papku ryadom s etim faylom
-  echo    2. Zapusti install.bat ^(poyavitsya v budushchey versii^)
+  echo  Папка WPy\ не обнаружена рядом с SONAR.
+  echo.
+  if exist "%APP_DIR%install.bat" (
+    echo  Найден install.bat — запустить его чтобы установить WPy?
+    echo.
+    set /p INST=  Запустить install.bat? [Enter = да / 0 = нет]: 
+    if not "!INST!"=="0" (
+      call "%APP_DIR%install.bat"
+      :: После установки перезапускаем поиск
+      for /d %%A in ("%APP_DIR%WPy\python-*.amd64") do (
+        if exist "%%A\python.exe" (
+          set "PYTHON=%%A\python.exe"
+          set "SITEPKG=%%A\Lib\site-packages"
+        )
+      )
+    )
+  ) else (
+    echo  install.bat не найден.
+    echo  Скопируйте папку WPy\ рядом с этим файлом.
+  )
+  echo.
+)
+
+:: Финальная проверка после возможной установки
+if not defined PYTHON (
+  echo.
+  echo  [ОШИБКА] Python всё ещё не найден. Обратитесь к администратору.
   echo.
   pause
   exit /b 1
@@ -51,47 +81,49 @@ if not defined PYTHON (
 echo  OK: %PYTHON%
 echo.
 
-:: Ochistka starykh .pth
-echo Cleaning old .pth packages...
+:: ============================================================
+:: Очистка устаревших .pth
+:: ============================================================
 for %%v in (3.5 3.6 3.7 3.8 3.9) do (
   for %%f in ("%SITEPKG%\*-py%%v-nspkg.pth") do (
     if exist "%%f" del /f /q "%%f"
   )
 )
 del /f /q "%SITEPKG%\distutils-precedence.pth" 2>nul
-echo Done.
-echo.
 
-:: Bekap bazy dannykh
+:: ============================================================
+:: Бекап БД
+:: ============================================================
 if not exist "%APP_DIR%db\backups" mkdir "%APP_DIR%db\backups"
-echo Creating database backup...
 if exist "%APP_DIR%db\database.db" (
     xcopy /Y /I "%APP_DIR%db\database.db" "%APP_DIR%db\backups\database_%date:~6,4%%date:~3,2%%date:~0,2%.db*" >nul
-    echo Backup: db\backups\database_%date:~6,4%%date:~3,2%%date:~0,2%.db
+    echo  Бекап: db\backups\database_%date:~6,4%%date:~3,2%%date:~0,2%.db
 ) else (
-    echo [WARN] db\database.db ne nayden -- bekap propushchen
+    echo  [ПРЕДУПРЕЖДЕНИЕ] db\database.db не найден
 )
+
+"%PYTHON%" -c "import os,glob;files=sorted(glob.glob('db/backups/database_*.db'));[os.remove(f) for f in files[:-5]];print('  Хранится резервных копий: '+str(min(len(files),5)))"
 echo.
 
-"%PYTHON%" -c "import os,glob;files=sorted(glob.glob('db/backups/database_*.db'));[os.remove(f) for f in files[:-5]];print('Backups kept: '+str(min(len(files),5)))"
-echo.
-
+:: ============================================================
 :: Health check
-echo Running health check...
+:: ============================================================
 "%PYTHON%" -m py_compile app.py
 if errorlevel 1 (
   echo.
-  echo [ERROR] Syntax error in app.py -- fix and restart.
+  echo  [ОШИБКА] Синтаксисеская ошибка в app.py!
   echo.
   pause
   exit /b 1
 )
-echo Health check OK.
+echo  Health check OK.
 echo.
 
-:: Obnovleniye koda iz GitHub
+:: ============================================================
+:: Обновление кода из GitHub
+:: ============================================================
 if exist "%APP_DIR%update.bat" (
-  set /p UPD=Obnovit kod iz GitHub? [Enter = da / 0 = net]: 
+  set /p UPD=  Обновить код из GitHub? [Enter = да / 0 = нет]: 
   if not "%UPD%"=="0" (
     echo.
     call "%APP_DIR%update.bat"
@@ -99,22 +131,26 @@ if exist "%APP_DIR%update.bat" (
   )
 )
 
+:: ============================================================
 :: Sync changelog
-set /p SYNC=Sync changelog s GitHub? [Enter = da / 0 = net]: 
+:: ============================================================
+set /p SYNC=  Sync changelog с GitHub? [Enter = да / 0 = нет]: 
 if not "%SYNC%"=="0" (
   echo.
   "%PYTHON%" "%APP_DIR%sync_changelog.py"
   echo.
 )
 
-:: Vybor rezhima
+:: ============================================================
+:: Выбор режима
+:: ============================================================
 :ask_mode
-echo Select mode:
-echo   [1] Production  (normal work)
-echo   [2] Debug       (detailed errors, auto-reload)
+echo  Выбери режим:
+echo    [1] Production  (нормальная работа)
+echo    [2] Debug       (подробные ошибки, авто-релоад)
 echo.
 set "MODE_CHOICE="
-set /p MODE_CHOICE=Mode (1/2): 
+set /p MODE_CHOICE=  Режим (1/2): 
 
 if "%MODE_CHOICE%"=="1" (
   set "FLASK_ENV=production"
@@ -123,22 +159,24 @@ if "%MODE_CHOICE%"=="1" (
   set "FLASK_ENV=development"
   set "APP_DEBUG=1"
 ) else (
-  echo Invalid choice, enter 1 or 2.
+  echo  Неверный выбор, введи 1 или 2.
   echo.
   goto ask_mode
 )
 echo.
 
-:: Otkryt brauzer
+:: ============================================================
+:: Открыть браузер
+:: ============================================================
 :ask_open
 set "OPEN_CHOICE="
-set /p OPEN_CHOICE=Otkryt brauser? [1 = da / 0 = net]: 
+set /p OPEN_CHOICE=  Открыть браузер? [1 = да / 0 = нет]: 
 if "%OPEN_CHOICE%"=="1" (
   start "" http://127.0.0.1:5000
 ) else if "%OPEN_CHOICE%"=="0" (
   rem skip
 ) else (
-  echo Enter 1 or 0.
+  echo  Введи 1 или 0.
   echo.
   goto ask_open
 )
@@ -158,9 +196,11 @@ echo  Network: http://%ip%:5000
 echo ============================================
 echo.
 
-:: Zapusk servera
+:: ============================================================
+:: Запуск сервера
+:: ============================================================
 :start_server
-echo Server is running... Press Ctrl+C to stop.
+echo  Сервер запущен... Для остановки нажмите Ctrl+C
 echo.
 
 set FLASK_ENV=%FLASK_ENV%
@@ -169,14 +209,15 @@ set APP_DEBUG=%APP_DEBUG%
 
 echo.
 echo ============================================
-echo   Server stopped.
+echo   Сервер остановлен.
 echo ============================================
 echo.
-echo   [1] Restart server
-echo   [2] Exit
+echo   [1] Перезапустить
+echo   [2] Выйти
+
 echo.
 set "CHOICE="
-set /p CHOICE=Choice (1/2): 
+set /p CHOICE=  Выбор (1/2): 
 if "%CHOICE%"=="1" goto start_server
 
 :quit
