@@ -9,6 +9,7 @@
 {# ║  - Тёмный/светлый режим (localStorage)                      ║ #}
 {# ║  - Баннер "Соединение потеряно" (пинг каждые 10 сек)        ║ #}
 {# ║  - Drone Autosave Widget (автосохранение каждые 60 сек)     ║ #}
+{# ║  - Online users counter (опрос /api/online каждые 60 сек)   ║ #}
 {# ║  - Подвал с версией и контактом разработчика                ║ #}
 {# ╚══════════════════════════════════════════════════════════════╝ #}
 <html lang="ru">
@@ -165,6 +166,40 @@
       body.sb-open .sidebar { transform:translateX(0); }
       body.sb-open .sb-overlay { display:block; }
       .page-wrap { margin-left:0 !important; }
+    }
+
+    /* ════════════════════════════════════════════════════════════
+       ONLINE COUNTER — блок в подвале сайдбара
+       ════════════════════════════════════════════════════════════ */
+    .sb-online {
+      padding:10px 16px 12px;
+      border-top:1px solid rgba(255,255,255,.1);
+      display:flex; align-items:center; gap:8px;
+      white-space:nowrap; overflow:hidden;
+    }
+    .sb-online-dot {
+      width:8px; height:8px; border-radius:50%;
+      background:#4ade80; flex-shrink:0;
+      box-shadow:0 0 0 0 rgba(74,222,128,.6);
+      animation:onlinePulse 2.5s infinite;
+    }
+    @keyframes onlinePulse {
+      0%   { box-shadow:0 0 0 0 rgba(74,222,128,.6); }
+      70%  { box-shadow:0 0 0 6px rgba(74,222,128,0); }
+      100% { box-shadow:0 0 0 0 rgba(74,222,128,0); }
+    }
+    .sb-online-text {
+      font-size:12px; color:rgba(255,255,255,.7);
+      transition:opacity .2s;
+    }
+    body.sb-col .sb-online-text { opacity:0; pointer-events:none; }
+    .sb-online-num {
+      font-weight:700; color:#4ade80;
+      transition:transform .3s, color .3s;
+    }
+    .sb-online-num.bump {
+      transform:scale(1.4);
+      color:#86efac;
     }
 
     /* ════════════════════════════════════════════════════════════
@@ -457,6 +492,15 @@
     </button>
 
   </nav>
+
+  {# ─── ONLINE COUNTER ──────────────────────────────────────────── #}
+  <div class="sb-online" title="Пользователи онлайн за последние 5 минут">
+    <span class="sb-online-dot"></span>
+    <span class="sb-online-text">
+      Онлайн: <span class="sb-online-num" id="onlineCount">…</span>
+    </span>
+  </div>
+
 </aside>
 {% endif %}
 
@@ -602,6 +646,41 @@
     ping();
     setInterval(ping, INTERVAL);
   }, 5000);
+})();
+</script>
+
+
+{# ─── ONLINE COUNTER SCRIPT ──────────────────────────────────────── #}
+<script>
+(function(){
+  var el      = document.getElementById('onlineCount');
+  var prevVal = null;
+  if (!el) return;
+
+  function fetchOnline(){
+    fetch('/api/online', { cache:'no-store', credentials:'same-origin' })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(data){
+        if (!data) return;
+        var n = data.online;
+        el.textContent = n;
+        /* анимация при изменении числа */
+        if (prevVal !== null && prevVal !== n) {
+          el.classList.remove('bump');
+          void el.offsetWidth; /* reflow */
+          el.classList.add('bump');
+          setTimeout(function(){ el.classList.remove('bump'); }, 400);
+        }
+        prevVal = n;
+      })
+      .catch(function(){});
+  }
+
+  /* Первый запрос — через 2 сек после загрузки, затем каждые 60 сек */
+  setTimeout(function(){
+    fetchOnline();
+    setInterval(fetchOnline, 60000);
+  }, 2000);
 })();
 </script>
 
