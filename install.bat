@@ -4,11 +4,9 @@ chcp 65001 >nul
 cd /d "%~dp0"
 title SONAR - Ustanovka
 
-:: Autofix: konvertiruem LF->CRLF esli nuzho
-powershell -Command "$f='%~f0'; $c=(Get-Content $f -Raw); if($c -notmatch '\r\n'){(Get-Content $f)|Set-Content $f; Start-Process 'cmd' -ArgumentList '/c',$f -NoNewWindow; exit}"
-if errorlevel 1 goto :start
+:: Autofix LF->CRLF (bez perezapuska)
+powershell -Command "$f='%~f0'; $c=[System.IO.File]::ReadAllText($f); if($c -notmatch '\r\n'){$c=$c -replace '(?<!\r)\n','\r\n'; [System.IO.File]::WriteAllText($f,$c)}"
 
-:start
 echo.
 echo ============================================================
 echo   SONAR - Ustanovka / pervonachalnaya nastroyka
