@@ -23,7 +23,7 @@ echo [1/5] Poisk Python...
 if exist "%APP_DIR%\WPy\python313\python.exe" (
   set "PYTHON=%APP_DIR%\WPy\python313\python.exe"
   set "SITEPKG=%APP_DIR%\WPy\python313\Lib\site-packages"
-  echo  OK WPy\python313
+  echo  OK WPy\python313 (uzhe est)
   goto :install_deps
 )
 
@@ -37,9 +37,11 @@ if exist "%APP_DIR%\tools\python313\python.exe" (
     pause
     exit /b 1
   )
+  echo  Dobavlyayu put v python313._pth...
+  echo %APP_DIR%>> "%APP_DIR%\WPy\python313\python313._pth"
   set "PYTHON=%APP_DIR%\WPy\python313\python.exe"
   set "SITEPKG=%APP_DIR%\WPy\python313\Lib\site-packages"
-  echo  OK: Python skopirovan.
+  echo  OK: Python skopirovan i nastroyen.
   goto :install_deps
 )
 
@@ -81,6 +83,7 @@ exit /b 1
 echo.
 echo [2/5] Proverka pip...
 
+set PYTHONUTF8=1
 "%PYTHON%" -m pip --version >nul 2>&1
 if errorlevel 1 (
   echo  pip ne nayden, ustanovka...
