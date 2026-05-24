@@ -2,6 +2,7 @@
 {# ╔══════════════════════════════════════════════════════════════╗ #}
 {# ║ settings.html                                               ║ #}
 {# ║ feat #10: Страница настроек пользователя                   ║ #}
+{# ║ feat #9:  Тема «Зона» добавлена в выбор оформления         ║ #}
 {# ╚══════════════════════════════════════════════════════════════╝ #}
 
 {% block content %}
@@ -69,6 +70,12 @@
                      value="dark" {% if cur_theme == 'dark' %}checked{% endif %}>
               <label class="btn btn-outline-secondary" for="theme_dark">
                 <i class="bi bi-moon-stars-fill me-1" style="color:#6c5ce7"></i> Тёмная
+              </label>
+
+              <input type="radio" class="btn-check" name="theme" id="theme_zone"
+                     value="zone" {% if cur_theme == 'zone' %}checked{% endif %}>
+              <label class="btn btn-outline-secondary" for="theme_zone">
+                <i class="bi bi-radioactive me-1" style="color:#c8a84b"></i> Зона
               </label>
 
               <input type="radio" class="btn-check" name="theme" id="theme_system"
@@ -171,12 +178,15 @@
   document.querySelectorAll('input[name="theme"]').forEach(function(radio){
     radio.addEventListener('change', function(){
       var val = this.value;
-      if (val === 'dark'){
+      if (val === 'dark') {
         document.body.setAttribute('data-theme','dark');
         localStorage.setItem('app_theme','dark');
-      } else if (val === 'system'){
+      } else if (val === 'zone') {
+        document.body.setAttribute('data-theme','zone');
+        localStorage.setItem('app_theme','zone');
+      } else if (val === 'system') {
         var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        if (prefersDark){ document.body.setAttribute('data-theme','dark'); }
+        if (prefersDark) { document.body.setAttribute('data-theme','dark'); }
         else { document.body.removeAttribute('data-theme'); }
         localStorage.setItem('app_theme','system');
       } else {

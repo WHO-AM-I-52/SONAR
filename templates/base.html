@@ -2,7 +2,7 @@
 {# ╔══════════════════════════════════════════════════════════════╗ #}
 {# ║                        base.html                            ║ #}
 {# ║  Базовый шаблон приложения "Подбор ЗУ — НО"                 ║ #}
-{# ║  v2.8: Тема «Зона» (STALKER/GAMMA) (#9)                     ║ #}
+{# ║  v2.9: Единая кнопка тем в сайдбаре (#9)                   ║ #}
 {# ╚══════════════════════════════════════════════════════════════╝ #}
 <html lang="ru">
 <head>
@@ -115,7 +115,7 @@
     .sb-online-num { font-weight:700; color:#4ade80; transition:transform .3s, color .3s; }
     .sb-online-num.bump { transform:scale(1.4); color:#86efac; }
 
-    /* ─── CSS-переменные тем ────────────────────────────────────── */
+    /* ─── CSS-переменные тем ──────────────────────────────────── */
     :root {
       --bg:#f4f7fa; --surface:#fff; --surface2:#f0f4f8;
       --text:#212529; --text-muted:#6c757d; --border:#dee2e6;
@@ -132,7 +132,7 @@
       --table-stripe:#1e2235; --table-hover:#252a40;
       --accent:#60a5fa; --accent2:#3b82f6;
     }
-    /* ─── Тема «Зона» (STALKER/GAMMA) ──────────────────────────── */
+    /* ─── Тема «Зона» (STALKER/GAMMA) ────────────────────────── */
     body[data-theme="zone"] {
       --bg:#111210; --surface:#181916; --surface2:#1e201c;
       --text:#c8c4a8; --text-muted:#7a7a60; --border:#2e2e20;
@@ -164,7 +164,7 @@
     hr, .dropdown-divider { border-color:var(--border) !important; }
     .page-wrap { background:var(--bg); }
 
-    /* ─── Тёмная тема — дополнительные оверрайды ─────────────── */
+    /* ─── Тёмная тема — дополнительные overrides ──────────────── */
     body[data-theme="dark"] h1, body[data-theme="dark"] h2, body[data-theme="dark"] h3, body[data-theme="dark"] h4, body[data-theme="dark"] h5, body[data-theme="dark"] h6, body[data-theme="dark"] p, body[data-theme="dark"] span:not(.badge), body[data-theme="dark"] label, body[data-theme="dark"] td, body[data-theme="dark"] th, body[data-theme="dark"] li, body[data-theme="dark"] strong, body[data-theme="dark"] small, body[data-theme="dark"] .fw-bold, body[data-theme="dark"] .fw-semibold { color: var(--text) !important; }
     body[data-theme="dark"] .text-dark, body[data-theme="dark"] .text-black { color: var(--text) !important; }
     body[data-theme="dark"] ::placeholder { color: var(--text-muted) !important; opacity: 1; }
@@ -186,7 +186,7 @@
     body[data-theme="dark"] .modal-body { background: var(--surface) !important; }
     body[data-theme="dark"] select option { background: var(--surface) !important; color: var(--text) !important; }
 
-    /* ─── Тема «Зона» — дополнительные оверрайды ────────────── */
+    /* ─── Тема «Зона» — дополнительные overrides ─────────────── */
     body[data-theme="zone"] h1, body[data-theme="zone"] h2, body[data-theme="zone"] h3, body[data-theme="zone"] h4, body[data-theme="zone"] h5, body[data-theme="zone"] h6, body[data-theme="zone"] p, body[data-theme="zone"] span:not(.badge), body[data-theme="zone"] label, body[data-theme="zone"] td, body[data-theme="zone"] th, body[data-theme="zone"] li, body[data-theme="zone"] strong, body[data-theme="zone"] small, body[data-theme="zone"] .fw-bold, body[data-theme="zone"] .fw-semibold { color: var(--text) !important; }
     body[data-theme="zone"] .text-dark, body[data-theme="zone"] .text-black { color: var(--text) !important; }
     body[data-theme="zone"] ::placeholder { color: var(--text-muted) !important; opacity: 1; }
@@ -209,7 +209,7 @@
     body[data-theme="zone"] .modal-footer { border-color: var(--border) !important; background: var(--surface) !important; }
     body[data-theme="zone"] .modal-body { background: var(--surface) !important; }
     body[data-theme="zone"] select option { background: var(--surface) !important; color: var(--text) !important; }
-    /* Зернистая текстура через псевдоэлемент */
+    /* Зернистая текстура */
     body[data-theme="zone"]::before {
       content:''; position:fixed; inset:0; z-index:0; pointer-events:none;
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
@@ -223,24 +223,51 @@
     body[data-theme="zone"] .sb-cat { color:rgba(200,168,75,.35); }
     body[data-theme="zone"] .sb-sep { background:rgba(200,168,75,.1); }
     body[data-theme="zone"] .sb-online { border-top-color:rgba(200,168,75,.1); }
-    body[data-theme="zone"] .sb-online-dot { background:#c8a84b; box-shadow:0 0 0 0 rgba(200,168,75,.6); }
+    body[data-theme="zone"] .sb-online-dot { background:#c8a84b; }
     @keyframes zonePulse { 0%{box-shadow:0 0 0 0 rgba(200,168,75,.6);} 70%{box-shadow:0 0 0 6px rgba(200,168,75,0);} 100%{box-shadow:0 0 0 0 rgba(200,168,75,0);} }
     body[data-theme="zone"] .sb-online-dot { animation:zonePulse 2.5s infinite; }
     body[data-theme="zone"] .sb-online-num { color:#c8a84b; }
     body[data-theme="zone"] .topbar { background:#151612; border-bottom:1px solid #2e2e1a; box-shadow:0 2px 12px rgba(0,0,0,.6); }
 
-    /* ─── Кнопки переключения тем ────────────────────────────── */
-    .theme-toggle-btn { display:flex; align-items:center; gap:10px; padding:10px 16px; color:rgba(255,255,255,.7); background:none; border:none; width:100%; font-size:13px; cursor:pointer; white-space:nowrap; transition:background .15s; }
+    /* ─── Dropdown-меню тем в сайдбаре ───────────────────────── */
+    .theme-toggle-btn {
+      display:flex; align-items:center; gap:10px; padding:10px 16px;
+      color:rgba(255,255,255,.7); background:none; border:none;
+      width:100%; font-size:13px; cursor:pointer; white-space:nowrap;
+      transition:background .15s; position:relative;
+    }
     .theme-toggle-btn:hover { background:rgba(255,255,255,.1); color:#fff; }
-    .theme-toggle-btn i { font-size:16px; width:20px; text-align:center; }
+    .theme-toggle-btn i.theme-main-icon { font-size:16px; width:20px; text-align:center; flex-shrink:0; }
+    .theme-toggle-btn .theme-caret { margin-left:auto; font-size:11px; transition:transform .2s; flex-shrink:0; }
+    .theme-toggle-btn.open .theme-caret { transform:rotate(180deg); }
     body.sb-col .theme-toggle-btn .sb-lbl { opacity:0; pointer-events:none; }
-    /* Кнопка «Зона» в нормальном сайдбаре */
-    .zone-toggle-btn { display:flex; align-items:center; gap:10px; padding:10px 16px; color:rgba(255,255,255,.7); background:none; border:none; width:100%; font-size:13px; cursor:pointer; white-space:nowrap; transition:background .15s; }
-    .zone-toggle-btn:hover { background:rgba(200,168,75,.15); color:#c8a84b; }
-    .zone-toggle-btn i { font-size:16px; width:20px; text-align:center; }
-    body.sb-col .zone-toggle-btn .sb-lbl { opacity:0; pointer-events:none; }
-    body[data-theme="zone"] .zone-toggle-btn { color:#c8a84b; background:rgba(200,168,75,.1); }
-    body[data-theme="zone"] .zone-toggle-btn:hover { background:rgba(200,168,75,.2); }
+    body.sb-col .theme-toggle-btn .theme-caret { opacity:0; }
+
+    /* Подменю тем */
+    .theme-submenu {
+      overflow:hidden; max-height:0; transition:max-height .25s ease;
+      background:rgba(0,0,0,.15);
+    }
+    .theme-submenu.open { max-height:160px; }
+    body.sb-col .theme-submenu { display:none; }
+    .theme-submenu-item {
+      display:flex; align-items:center; gap:10px;
+      padding:8px 16px 8px 46px;
+      color:rgba(255,255,255,.7); cursor:pointer;
+      font-size:13px; white-space:nowrap; border:none;
+      background:none; width:100%; transition:background .15s;
+      border-left:3px solid transparent;
+    }
+    .theme-submenu-item:hover { background:rgba(255,255,255,.08); color:#fff; }
+    .theme-submenu-item.active-theme { color:#fff; border-left-color:#fff; background:rgba(255,255,255,.1); font-weight:600; }
+    .theme-submenu-item i { font-size:14px; width:16px; text-align:center; }
+
+    /* Активные состояния кнопки-переключателя по теме */
+    body[data-theme="dark"] .theme-toggle-btn { color:rgba(255,255,255,.85); }
+    body[data-theme="zone"] .theme-toggle-btn { color:#c8a84b; }
+    body[data-theme="zone"] .theme-toggle-btn:hover { background:rgba(200,168,75,.1); }
+    body[data-theme="zone"] .theme-submenu { background:rgba(0,0,0,.25); }
+    body[data-theme="zone"] .theme-submenu-item.active-theme { color:#c8a84b; border-left-color:#c8a84b; background:rgba(200,168,75,.1); }
 
     #offlineBanner { display:none; position:fixed; top:0; left:0; right:0; z-index:99999; background:linear-gradient(135deg, #7f1d1d, #991b1b); color:#fff; padding:0; box-shadow:0 4px 24px rgba(0,0,0,.5); animation:offlineFadeIn .4s ease; }
     @keyframes offlineFadeIn { from{opacity:0;transform:translateY(-20px);} to{opacity:1;transform:translateY(0);} }
@@ -317,7 +344,6 @@
           {% endif %}
           <li><hr class="dropdown-divider my-1"></li>
         {% endif %}
-        {# ─── Настройки (#10) ──────────────────────────────────── #}
         <li>
           <a class="dropdown-item" href="{{ url_for('settings.settings') }}">
             <i class="bi bi-gear me-2"></i>Настройки
@@ -360,14 +386,25 @@
     <a href="{{ url_for('misc.changelog') }}" class="sb-link {{ 'active' if request.path=='/changelog' }}"><i class="bi bi-journal-text"></i><span class="sb-lbl">Версии</span></a>
     <a href="https://github.com/WHO-AM-I-52/SONAR" target="_blank" rel="noopener noreferrer" class="sb-link"><i class="bi bi-github"></i><span class="sb-lbl">GitHub</span></a>
     <div class="sb-sep"></div>
-    <button class="theme-toggle-btn" id="themeToggle" title="Светлый / Тёмный режим">
-      <i class="bi bi-moon-stars-fill" id="themeIcon"></i>
-      <span class="sb-lbl" id="themeLabel">Тёмный режим</span>
+
+    {# ─── Единая кнопка тем ─────────────────────────────────── #}
+    <button class="theme-toggle-btn" id="themeToggle" title="Тема оформления">
+      <i class="bi bi-circle-half theme-main-icon" id="themeIcon"></i>
+      <span class="sb-lbl" id="themeLabel">Тема</span>
+      <i class="bi bi-chevron-down theme-caret" id="themeCaret"></i>
     </button>
-    <button class="zone-toggle-btn" id="zoneToggle" title="Тема «Зона» (S.T.A.L.K.E.R.)">
-      <i class="bi bi-radioactive" id="zoneIcon"></i>
-      <span class="sb-lbl" id="zoneLabel">Тема «Зона»</span>
-    </button>
+    <div class="theme-submenu" id="themeSubmenu">
+      <button class="theme-submenu-item" id="themeLight" data-theme-val="light">
+        <i class="bi bi-sun-fill" style="color:#f59e0b"></i> Светлая
+      </button>
+      <button class="theme-submenu-item" id="themeDark" data-theme-val="dark">
+        <i class="bi bi-moon-stars-fill" style="color:#818cf8"></i> Тёмная
+      </button>
+      <button class="theme-submenu-item" id="themeZone" data-theme-val="zone">
+        <i class="bi bi-radioactive" style="color:#c8a84b"></i> Зона
+      </button>
+    </div>
+
   </nav>
   <div class="sb-online" title="Пользователи онлайн за последние 5 минут">
     <span class="sb-online-dot"></span>
@@ -431,68 +468,70 @@
 <script>
 (function(){
   var KEY = 'app_theme';
-  var DARK = 'dark';
-  var ZONE = 'zone';
+  var THEMES = {
+    light: { icon:'bi bi-sun-fill',    label:'Светлая',  color:'#f59e0b' },
+    dark:  { icon:'bi bi-moon-stars-fill', label:'Тёмная', color:'#818cf8' },
+    zone:  { icon:'bi bi-radioactive', label:'Зона',     color:'#c8a84b' }
+  };
 
   // Восстановить тему при загрузке
-  var saved = localStorage.getItem(KEY);
-  if (saved === DARK) document.body.setAttribute('data-theme', DARK);
-  else if (saved === ZONE) document.body.setAttribute('data-theme', ZONE);
+  var saved = localStorage.getItem(KEY) || 'light';
+  if (saved === 'dark') document.body.setAttribute('data-theme', 'dark');
+  else if (saved === 'zone') document.body.setAttribute('data-theme', 'zone');
+  else document.body.removeAttribute('data-theme');
 
-  function syncUI(){
-    var theme = document.body.getAttribute('data-theme') || 'light';
+  function applyTheme(val) {
+    if (val === 'dark') document.body.setAttribute('data-theme', 'dark');
+    else if (val === 'zone') document.body.setAttribute('data-theme', 'zone');
+    else document.body.removeAttribute('data-theme');
+    localStorage.setItem(KEY, val);
+    syncUI();
+  }
+
+  function syncUI() {
+    var cur = document.body.getAttribute('data-theme') || 'light';
+    var t = THEMES[cur] || THEMES.light;
     var icon = document.getElementById('themeIcon');
     var label = document.getElementById('themeLabel');
-    var zIcon = document.getElementById('zoneIcon');
-    var zLabel = document.getElementById('zoneLabel');
     if (!icon) return;
-
-    if (theme === DARK) {
-      icon.className = 'bi bi-sun-fill';
-      label.textContent = 'Светлый режим';
-    } else {
-      icon.className = 'bi bi-moon-stars-fill';
-      label.textContent = 'Тёмный режим';
-    }
-
-    if (theme === ZONE) {
-      zIcon.className = 'bi bi-radioactive';
-      zLabel.textContent = 'Выйти из Зоны';
-    } else {
-      zIcon.className = 'bi bi-radioactive';
-      zLabel.textContent = 'Тема «Зона»';
-    }
+    icon.className = t.icon + ' theme-main-icon';
+    icon.style.color = t.color;
+    label.textContent = t.label;
+    // Обновить активный пункт подменю
+    document.querySelectorAll('.theme-submenu-item').forEach(function(btn){
+      btn.classList.toggle('active-theme', btn.getAttribute('data-theme-val') === cur);
+    });
   }
 
   document.addEventListener('DOMContentLoaded', function(){
     syncUI();
 
-    // Кнопка light ↔ dark
-    var btn = document.getElementById('themeToggle');
-    if (btn) btn.addEventListener('click', function(){
-      var theme = document.body.getAttribute('data-theme') || 'light';
-      if (theme === DARK || theme === ZONE) {
-        document.body.removeAttribute('data-theme');
-        localStorage.setItem(KEY, 'light');
-      } else {
-        document.body.setAttribute('data-theme', DARK);
-        localStorage.setItem(KEY, DARK);
-      }
-      syncUI();
+    // Открыть/закрыть подменю
+    var toggleBtn = document.getElementById('themeToggle');
+    var submenu = document.getElementById('themeSubmenu');
+    if (toggleBtn && submenu) {
+      toggleBtn.addEventListener('click', function(e){
+        e.stopPropagation();
+        var isOpen = submenu.classList.contains('open');
+        submenu.classList.toggle('open', !isOpen);
+        toggleBtn.classList.toggle('open', !isOpen);
+      });
+    }
+
+    // Клик по пункту подменю
+    document.querySelectorAll('.theme-submenu-item').forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        applyTheme(this.getAttribute('data-theme-val'));
+        // Закрыть подменю
+        submenu.classList.remove('open');
+        toggleBtn.classList.remove('open');
+      });
     });
 
-    // Кнопка zone toggle
-    var zBtn = document.getElementById('zoneToggle');
-    if (zBtn) zBtn.addEventListener('click', function(){
-      var theme = document.body.getAttribute('data-theme') || 'light';
-      if (theme === ZONE) {
-        document.body.removeAttribute('data-theme');
-        localStorage.setItem(KEY, 'light');
-      } else {
-        document.body.setAttribute('data-theme', ZONE);
-        localStorage.setItem(KEY, ZONE);
-      }
-      syncUI();
+    // Клик вне сайдбара — закрыть подменю
+    document.addEventListener('click', function(){
+      if (submenu) { submenu.classList.remove('open'); toggleBtn.classList.remove('open'); }
     });
   });
 })();
