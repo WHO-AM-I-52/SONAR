@@ -2,12 +2,12 @@
 {% block content %}
 
 {# ═══════════════════════════════════════════════════════════════ #}
-{#   history.html — История изменений обращения                          #}
-{#   v2.2: inline word-diff, без кнопки "Откатить", collapsible                   #}
+{#   history.html — История изменений обращения                  #}
+{#   v2.3: fix pluralize → прямой текст, guard default+string    #}
 {# ═══════════════════════════════════════════════════════════════ #}
 
 <style>
-/* ─── Inline diff ─────────────────────────────────────────────────── */
+/* ─── Inline diff ──────────────────────────────────────────── */
 .diff-cell { font-size:.82rem; word-break:break-word; line-height:1.6; }
 .diff-del {
   background:#ffeef0; color:#b91c1c;
@@ -20,7 +20,7 @@
 }
 .diff-eq { color:inherit; }
 
-/* ─── Collapsible ────────────────────────────────────────────────── */
+/* ─── Collapsible ──────────────────────────────────────────── */
 .hist-header {
   cursor:pointer; user-select:none;
   transition:background .15s;
@@ -34,14 +34,14 @@
 }
 .hist-header.collapsed .hist-chevron { transform:rotate(-90deg); }
 
-/* ─── Таблица ───────────────────────────────────────────────────── */
+/* ─── Таблица ──────────────────────────────────────────────── */
 .hist-table td { vertical-align:top; padding:.35rem .5rem !important; }
 .hist-table .field-col { width:28%; color:#6c757d; font-size:.8rem; }
 .hist-table .was-col  { width:36%; }
 .hist-table .now-col  { width:36%; }
 </style>
 
-{# ── ШАПКА ───────────────────────────────────────────────────────────── #}
+{# ── ШАПКА ───────────────────────────────────────────────────── #}
 <div class="d-flex align-items-center mb-4 gap-2">
   <a href="{{ url_for('requests.view_request', rid=rid) }}"
      class="btn btn-sm btn-outline-secondary">
@@ -61,14 +61,14 @@
   </h5>
 </div>
 
-{# ── ПУСТО ────────────────────────────────────────────────────────────── #}
+{# ── ПУСТО ───────────────────────────────────────────────────── #}
 {% if not history %}
 <div class="alert alert-info">
   <i class="bi bi-info-circle me-1"></i>
   История изменений отсутствует — обращение ещё не редактировалось.
 </div>
 
-{# ── СПИСОК ЗАПИСЕЙ ─────────────────────────────────────────────── #}
+{# ── СПИСОК ЗАПИСЕЙ ──────────────────────────────────────────── #}
 {% else %}
 {% for entry in history %}
 
@@ -77,7 +77,7 @@
   {% if entry.action == 'rollback' %}border-danger{% else %}border-warning{% endif %}"
   style="box-shadow:0 1px 4px rgba(0,0,0,.07)">
 
-  {# ── ЗАГОЛОВОК — кликабельный ────────────────────────── #}
+  {# ── ЗАГОЛОВОК — кликабельный ─────────────────────────────── #}
   <div class="card-body py-2 px-3 hist-header {% if not loop.first %}collapsed{% endif %}"
        data-target="{{ card_id }}"
        onclick="histToggle(this)">
@@ -94,8 +94,7 @@
         {% endif %}
         {% if entry.changes %}
           <span class="badge bg-secondary ms-1" style="font-size:.7rem">
-            {{ entry.changes|length }}
-            {{ entry.changes|length | pluralize('поле', 'поля', 'полей') }}
+            {{ entry.changes|length }} полей
           </span>
         {% endif %}
       </div>
@@ -103,7 +102,7 @@
     </div>
   </div>
 
-  {# ── ТЕЛО — сворачиваемое ───────────────────────────────── #}
+  {# ── ТЕЛО — сворачиваемое ─────────────────────────────────── #}
   <div id="{{ card_id }}"
        style="{% if not loop.first %}display:none{% endif %}">
     {% if entry.changes %}
@@ -124,8 +123,10 @@
         {% for label, vals in entry.changes.items() %}
         <tr>
           <td class="field-col">{{ label }}</td>
-          <td class="diff-cell was-col" data-was="{{ vals[0] or '' }}" data-now="{{ vals[1] or '' }}"></td>
-          <td class="diff-cell now-col" data-role="now"></td>
+          <td class="diff-cell was-col"
+              data-was="{{ (vals[0] | default('')) | string }}"
+              data-now="{{ (vals[1] | default('')) | string }}"></td>
+          <td class="diff-cell now-col"></td>
         </tr>
         {% endfor %}
         </tbody>
@@ -146,9 +147,9 @@
 
 {% block scripts %}
 <script>
-/* ──────────────────────────────────────────────────────────────
+/* ────────────────────────────────────────────────────────────
    COLLAPSIBLE
-────────────────────────────────────────────────────────────── */
+──────────────────────────────────────────────────────────── */
 function histToggle(header) {
   var id   = header.getAttribute('data-target');
   var body = document.getElementById(id);
@@ -158,12 +159,10 @@ function histToggle(header) {
   header.classList.toggle('collapsed', !hidden);
 }
 
-/* ──────────────────────────────────────────────────────────────
-   WORD-DIFF ENGINE
-   Делит строки на токены, применяет LCS для пословного diff.
-────────────────────────────────────────────────────────────── */
+/* ────────────────────────────────────────────────────────────
+   WORD-DIFF ENGINE  (LCS, пословный)
+──────────────────────────────────────────────────────────── */
 function tokenize(str) {
-  /* Разбиваем по пробелам, но сохраняем разделители */
   return str.split(/(\s+)/);
 }
 
@@ -175,7 +174,6 @@ function lcs(a, b) {
     for (var j = 1; j <= n; j++)
       dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] + 1
                                      : Math.max(dp[i-1][j], dp[i][j-1]);
-  /* backtrack */
   var ops = [], i = m, j = n;
   while (i > 0 || j > 0) {
     if (i > 0 && j > 0 && a[i-1] === b[j-1]) {
@@ -194,10 +192,7 @@ function esc(s) {
 }
 
 function renderDiff(wasStr, nowStr) {
-  var wasTokens = tokenize(wasStr);
-  var nowTokens = tokenize(nowStr);
-  var ops = lcs(wasTokens, nowTokens);
-
+  var ops = lcs(tokenize(wasStr), tokenize(nowStr));
   var wasHtml = '', nowHtml = '';
   ops.forEach(function(op) {
     if (op.type === 'eq') {
@@ -212,9 +207,9 @@ function renderDiff(wasStr, nowStr) {
   return { was: wasHtml, now: nowHtml };
 }
 
-/* ──────────────────────────────────────────────────────────────
-   Проходим по всем строкам таблицы, заполняем diff
-────────────────────────────────────────────────────────────── */
+/* ────────────────────────────────────────────────────────────
+   ЗАПОЛНЕНИЕ DIFF В ТАБЛИЦЕ
+──────────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('tr').forEach(function(row) {
     var wasCell = row.querySelector('.was-col.diff-cell');
@@ -230,7 +225,6 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
 
-    /* Если значения одинаковы — просто показываем без выделения */
     if (wasStr === nowStr) {
       wasCell.textContent = wasStr || '—';
       nowCell.textContent = nowStr || '—';
