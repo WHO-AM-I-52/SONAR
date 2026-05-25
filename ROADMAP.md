@@ -7,6 +7,11 @@
 
 ## ✅ Готово
 
+### v2.3.3 — Hover-popover + hotfix Bootstrap (25.05.2026)
+- Превью обращения при наведении на строку таблицы (номер, заявитель, статус, контакт, телефон)
+- API-маршрут `/api/request/<id>/preview` — Blueprint `preview_bp`
+- Исправлен TypeError в Bootstrap `tooltip.js:534` (`_isWithActiveTrigger`)
+
 ### v2.3.2 — SettingsMenu (25.05.2026)
 - Страница `/settings` с настройками профиля пользователя
 - Смена пароля с проверкой текущего
@@ -58,6 +63,7 @@
 
 | Версия | Что сделано | Дата |
 |--------|-------------|------|
+| v2.3.3 | Hover-popover, fix TypeError Bootstrap tooltip.js | 25.05.2026 |
 | v2.3.2 | SettingsMenu: /settings, смена пароля, тема, email | 25.05.2026 |
 | v2.3.1 | Unseen changelog badge | 25.05.2026 |
 | v2.2.1 | Hotfix батник и base.html | 25.05.2026 |
