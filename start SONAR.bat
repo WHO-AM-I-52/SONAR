@@ -95,6 +95,7 @@ if exist "%APP_DIR%db\database.db" (
 ) else (
   echo  [WARN] db\database.db ne nayden
 )
+
 "%PYTHON%" -c "import os,glob;files=sorted(glob.glob('db/backups/database_*.db'));[os.remove(f) for f in files[:-5]]"
 echo.
 
@@ -109,20 +110,65 @@ if errorlevel 1 (
 echo  Health check OK.
 echo.
 
-:: Obnovlenie koda
+:: Proverka obnovleniy na GitHub
 if exist "%APP_DIR%update.bat" (
-  set "UPD=x"
-  set /p UPD=  Obnovit kod iz GitHub? [Enter=da / 0=net]: 
-  if "!UPD!"=="x" (
+  if exist "%APP_DIR%_updater.py" (
+    echo  Proverka obnovleniy na GitHub...
+    "%PYTHON%" "%APP_DIR%_updater.py" --check
+    set "CHECK_RESULT=!ERRORLEVEL!"
     echo.
-    call "%APP_DIR%update.bat"
-    cd /d "%APP_DIR%"
-    echo.
-  ) else if not "!UPD!"=="0" (
-    echo.
-    call "%APP_DIR%update.bat"
-    cd /d "%APP_DIR%"
-    echo.
+
+    if "!CHECK_RESULT!"=="0" (
+      :: Obnovleniy net - propuskaem
+      echo  [OK] Ustanovlena aktualnaya versiya. Obnovleniye propushcheno.
+      echo.
+    ) else if "!CHECK_RESULT!"=="2" (
+      :: Oshibka soedineniya - predlagaem vse ravno
+      echo  [!] Ne udalos proverit obnovleniya. Zapustit obnovleniye?
+      set "UPD=x"
+      set /p UPD=  Skachat arkhiv obnovleniya s GitHub? [Enter=da / 0=net]: 
+      if "!UPD!"=="x" (
+        echo.
+        call "%APP_DIR%update.bat"
+        cd /d "%APP_DIR%"
+        echo.
+      ) else if not "!UPD!"=="0" (
+        echo.
+        call "%APP_DIR%update.bat"
+        cd /d "%APP_DIR%"
+        echo.
+      )
+    ) else (
+      :: Есть обновления (CHECK_RESULT=1) - спрашиваем
+      set "UPD=x"
+      set /p UPD=  Skachat arkhiv obnovleniya s GitHub? [Enter=da / 0=net]: 
+      if "!UPD!"=="x" (
+        echo.
+        call "%APP_DIR%update.bat"
+        cd /d "%APP_DIR%"
+        echo.
+      ) else if not "!UPD!"=="0" (
+        echo.
+        call "%APP_DIR%update.bat"
+        cd /d "%APP_DIR%"
+        echo.
+      )
+    )
+  ) else (
+    :: _updater.py ne nayden - staraya logika
+    set "UPD=x"
+    set /p UPD=  Skachat arkhiv obnovleniya s GitHub? [Enter=da / 0=net]: 
+    if "!UPD!"=="x" (
+      echo.
+      call "%APP_DIR%update.bat"
+      cd /d "%APP_DIR%"
+      echo.
+    ) else if not "!UPD!"=="0" (
+      echo.
+      call "%APP_DIR%update.bat"
+      cd /d "%APP_DIR%"
+      echo.
+    )
   )
 )
 
@@ -196,6 +242,7 @@ set APP_DEBUG=%APP_DEBUG%
 set PYTHONUTF8=1
 set PYTHONPATH=%APP_DIR%
 cd /d "%APP_DIR%"
+
 "%PYTHON%" app.py
 
 echo.
