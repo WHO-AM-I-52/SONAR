@@ -2,12 +2,13 @@
 {% block content %}
 
 {# ╔══════════════════════════════════════════════════════════════╗ #}
-{# ║  phonebook.html — Телефонный справочник (v2.1.0)            ║ #}
+{# ║  phonebook.html — Телефонный справочник (v2.3.0)            ║ #}
 {# ║  - Поиск по имени, организации, должности, телефону, email  ║ #}
 {# ║  - Группировка по организациям                              ║ #}
 {# ║  - Модалка добавления / редактирования (только админ)       ║ #}
 {# ║  - AJAX подтягивание адреса при выборе организации          ║ #}
 {# ║  - Маски: рабочий +7, личный 8(9XX), email валидация        ║ #}
+{# ║  - Импорт из Excel (шаблон + загрузка) — v2.3.0               ║ #}
 {# ╚══════════════════════════════════════════════════════════════╝ #}
 
 {# ─── МАКРОС определяем ПЕРВЫМ — до любых вызовов ─── #}
@@ -142,8 +143,23 @@
       {% endif %}
     </h5>
   </div>
-  <div class="d-flex gap-2">
+  <div class="d-flex gap-2 flex-wrap">
     {% if session.get('role') == 'admin' %}
+
+    {# ── Кнопка: скачать шаблон Excel ── #}
+    <a href="{{ url_for('pb_import.import_template') }}"
+       class="btn btn-sm btn-outline-success"
+       title="Скачать шаблон для заполнения">
+      <i class="bi bi-file-earmark-arrow-down me-1"></i>Шаблон
+    </a>
+
+    {# ── Кнопка: загрузить Excel ── #}
+    <button class="btn btn-sm btn-outline-primary"
+            data-bs-toggle="modal" data-bs-target="#importModal"
+            title="Загрузить контакты из Excel">
+      <i class="bi bi-file-earmark-arrow-up me-1"></i>Импорт Excel
+    </button>
+
     <a href="{{ url_for('phonebook.phonebook_orgs') }}"
        class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-building me-1"></i>Организации
@@ -333,6 +349,44 @@
                 data-bs-dismiss="modal">Отмена</button>
         <button type="submit" class="btn btn-primary btn-sm">
           <i class="bi bi-plus-circle me-1"></i>Добавить
+        </button>
+      </div>
+    </form>
+  </div></div>
+</div>
+
+{# ─── Модалка импорта Excel (v2.3.0) ─── #}
+<div class="modal fade" id="importModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header" style="background:#1B5E7B;color:#fff">
+      <h6 class="modal-title">
+        <i class="bi bi-file-earmark-arrow-up me-1"></i>Импорт справочника из Excel
+      </h6>
+      <button type="button" class="btn-close btn-close-white"
+              data-bs-dismiss="modal"></button>
+    </div>
+    <form method="post"
+          action="{{ url_for('pb_import.import_upload') }}"
+          enctype="multipart/form-data">
+      <div class="modal-body">
+        <p class="text-muted" style="font-size:.9em;">
+          Загрузите файл <strong>.xlsx</strong>, заполненный по шаблону SONAR.
+          <br>Если шаблона ещё нет — сначала скачайте его по кнопке «Шаблон».
+        </p>
+        <div class="mb-3">
+          <label class="form-label fw-bold">Файл Excel (.xlsx)</label>
+          <input type="file"
+                 name="import_file"
+                 accept=".xlsx"
+                 class="form-control form-control-sm"
+                 required>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm"
+                data-bs-dismiss="modal">Отмена</button>
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i class="bi bi-upload me-1"></i>Загрузить
         </button>
       </div>
     </form>
