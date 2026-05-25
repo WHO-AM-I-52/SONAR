@@ -3,26 +3,26 @@ chcp 65001 >nul
 setlocal
 
 :: ============================================================
-::  SONAR Updater
+::  SONAR - Скачивание архива обновления с GitHub
 :: ============================================================
 
 set "APP_DIR=%~dp0"
 set "UPDATER=%APP_DIR%_updater.py"
 set "PYTHON="
 
-:: [1] WPy\python313 (osnovnoy variant)
+:: [1] WPy\python313 (основной вариант)
 if exist "%APP_DIR%WPy\python313\python.exe" (
   set "PYTHON=%APP_DIR%WPy\python313\python.exe"
 )
 
-:: [2] Lyuboy WPy\python* ryadom
+:: [2] Любой WPy\python* рядом
 if not defined PYTHON (
   for /d %%A in ("%APP_DIR%WPy\python*") do (
     if exist "%%A\python.exe" set "PYTHON=%%A\python.exe"
   )
 )
 
-:: [3] WPy v sosednikh papkakh
+:: [3] WPy в соседних папках
 if not defined PYTHON (
   for /d %%B in ("%APP_DIR%..\") do (
     for /d %%A in ("%%B\WPy\python*") do (
@@ -31,20 +31,20 @@ if not defined PYTHON (
   )
 )
 
-:: [4] Fallback: sistemnyy Python
+:: [4] Запасной вариант: системный Python
 if not defined PYTHON (
   where python >nul 2>&1 && set "PYTHON=python"
 )
 
 echo.
 echo  ================================================
-echo   SONAR - Obnovleniye koda iz GitHub
+echo   SONAR - Скачивание архива обновления с GitHub
 echo  ================================================
 echo.
 
 if not defined PYTHON (
-  echo  [OSHIBKA] Python ne nayden.
-  echo  Ubedis chto papka WPy nakhoditsya ryadom s SONAR.
+  echo  [ОШИБКА] Python не найден.
+  echo  Убедись, что папка WPy находится рядом с SONAR.
   pause
   exit /b 1
 )
@@ -58,11 +58,11 @@ set UPDATER_EXIT=%ERRORLEVEL%
 echo.
 pause
 
-:: Yesli _updater.py vernul 2 — bat obnovilsya
+:: Если _updater.py вернул 2 — bat-файл был обновлён
 if "%UPDATER_EXIT%"=="2" (
   echo.
-  echo  [!] start SONAR.bat byl obnovlen.
-  echo  [!] Zakroy eto okno i zapusti start SONAR.bat zanovo vruchnuyu.
+  echo  [!] start SONAR.bat был обновлён.
+  echo  [!] Закрой это окно и запусти start SONAR.bat заново вручную.
   echo.
   pause
   exit /b 0
