@@ -3,7 +3,10 @@
 <style>
   .nav-tabs .nav-link { color: #1B5E7B !important; font-weight: 500; }
   .nav-tabs .nav-link.active { color: #111 !important; font-weight: 600; background:#fff; }
+  .color-swatch { display:inline-block; width:18px; height:18px; border-radius:3px;
+                  border:1px solid #ccc; vertical-align:middle; margin-right:6px; }
 </style>
+
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h5 class="mb-0" style="color:#1B5E7B"><i class="bi bi-tags me-1"></i>Справочники</h5>
 </div>
@@ -27,7 +30,19 @@
       <span class="badge bg-secondary ms-1">{{ source_types|length }}</span>
     </a>
   </li>
-    <li class="nav-item">
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-subject">
+      <i class="bi bi-card-checklist me-1"></i>Предмет обращения
+      <span class="badge bg-secondary ms-1">{{ subject_types|length }}</span>
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-result">
+      <i class="bi bi-palette me-1"></i>Итоги работы
+      <span class="badge bg-secondary ms-1">{{ result_types|length }}</span>
+    </a>
+  </li>
+  <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tab-okved">
       <i class="bi bi-list-ul me-1"></i>ОКВЭД
       <span class="badge bg-secondary ms-1">{{ okved_total }}</span>
@@ -87,8 +102,7 @@
                       <input type="hidden" name="cid" value="{{ item.id }}">
                       <input type="text" name="value" class="form-control form-control-sm py-0"
                              value="{{ item.value }}" style="min-width:0">
-                      <button class="btn btn-sm btn-outline-secondary py-0 px-2"
-                              title="Сохранить">
+                      <button class="btn btn-sm btn-outline-secondary py-0 px-2" title="Сохранить">
                         <i class="bi bi-check-lg"></i>
                       </button>
                     </form>
@@ -106,11 +120,7 @@
                   </td>
                 </tr>
                 {% else %}
-                <tr>
-                  <td colspan="3" class="text-center text-muted py-3">
-                    Нет значений
-                  </td>
-                </tr>
+                <tr><td colspan="3" class="text-center text-muted py-3">Нет значений</td></tr>
                 {% endfor %}
               </tbody>
             </table>
@@ -120,51 +130,217 @@
     </div>
   </div>
   {% endfor %}
-  
-  <!-- ===== ВКЛАДКА ОКВЭД ===== -->
+
+  {# ===== ПРЕДМЕТ ОБРАЩЕНИЯ (subject_types) ===== #}
+  <div class="tab-pane fade" id="tab-subject">
+    <div class="row g-3">
+      <div class="col-md-5">
+        <div class="card p-3">
+          <h6 class="mb-3" style="color:#1B5E7B">
+            <i class="bi bi-plus-circle me-1"></i>Добавить предмет
+          </h6>
+          <form method="post" action="{{ url_for('admin.subject_types_write') }}">
+            <input type="hidden" name="action" value="add">
+            <div class="input-group">
+              <input type="text" name="name" class="form-control form-control-sm"
+                     placeholder="например: подбор зу" required>
+              <button class="btn btn-sm btn-primary">
+                <i class="bi bi-plus-lg"></i> Добавить
+              </button>
+            </div>
+          </form>
+          <div class="alert alert-light border mt-3 mb-0 p-2" style="font-size:11px">
+            <i class="bi bi-info-circle text-muted me-1"></i>
+            Значения отображаются в форме обращения (раздел «Предмет»)
+            и в выгрузке МинЭК (колонка E).
+          </div>
+        </div>
+      </div>
+      <div class="col-md-7">
+        <div class="card p-3">
+          <h6 class="mb-2" style="color:#1B5E7B">
+            <i class="bi bi-list-ul me-1"></i>Текущие значения
+          </h6>
+          <div style="max-height:420px;overflow-y:auto">
+            <table class="table table-sm table-hover mb-0" style="font-size:12px">
+              <thead>
+                <tr>
+                  <th style="background:#f8f9fa">#</th>
+                  <th style="background:#f8f9fa">Предмет</th>
+                  <th style="background:#f8f9fa" class="text-end">Действия</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for st in subject_types %}
+                <tr>
+                  <td class="text-muted">{{ loop.index }}</td>
+                  <td>
+                    <form method="post" class="d-flex gap-1 align-items-center"
+                          action="{{ url_for('admin.subject_types_write') }}">
+                      <input type="hidden" name="action" value="rename">
+                      <input type="hidden" name="sid" value="{{ st.id }}">
+                      <input type="text" name="name" class="form-control form-control-sm py-0"
+                             value="{{ st.name }}" style="min-width:0">
+                      <button class="btn btn-sm btn-outline-secondary py-0 px-2" title="Сохранить">
+                        <i class="bi bi-check-lg"></i>
+                      </button>
+                    </form>
+                  </td>
+                  <td class="text-end">
+                    <form method="post" class="d-inline"
+                          action="{{ url_for('admin.subject_types_write') }}"
+                          onsubmit="return confirm('Удалить предмет?')">
+                      <input type="hidden" name="action" value="delete">
+                      <input type="hidden" name="sid" value="{{ st.id }}">
+                      <button class="btn btn-sm btn-outline-danger py-0 px-2">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="3" class="text-center text-muted py-3">Нет значений</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ===== ИТОГИ РАБОТЫ (result_types) ===== #}
+  <div class="tab-pane fade" id="tab-result">
+    <div class="row g-3">
+      <div class="col-md-5">
+        <div class="card p-3">
+          <h6 class="mb-3" style="color:#1B5E7B">
+            <i class="bi bi-plus-circle me-1"></i>Добавить итог
+          </h6>
+          <form method="post" action="{{ url_for('admin.result_types_write') }}">
+            <input type="hidden" name="action" value="add">
+            <div class="mb-2">
+              <input type="text" name="name" class="form-control form-control-sm"
+                     placeholder="Название итога..." required>
+            </div>
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <label style="font-size:12px;white-space:nowrap">Цвет заливки:</label>
+              <input type="color" name="color_hex" value="#FFFFFF"
+                     class="form-control form-control-color form-control-sm"
+                     style="width:48px;padding:2px">
+              <span class="text-muted" style="font-size:11px">отображается в выгрузке Excel</span>
+            </div>
+            <button class="btn btn-sm btn-primary w-100">
+              <i class="bi bi-plus-lg"></i> Добавить
+            </button>
+          </form>
+          <div class="alert alert-light border mt-3 mb-0 p-2" style="font-size:11px">
+            <i class="bi bi-info-circle text-muted me-1"></i>
+            Цвет заливки используется для подсвечки строк выгрузки
+            МинЭК (лист «Легенда»). Значения отображаются
+            в форме обращения (раздел «Итоги»).
+          </div>
+        </div>
+      </div>
+      <div class="col-md-7">
+        <div class="card p-3">
+          <h6 class="mb-2" style="color:#1B5E7B">
+            <i class="bi bi-list-ul me-1"></i>Текущие значения
+          </h6>
+          <div style="max-height:420px;overflow-y:auto">
+            <table class="table table-sm table-hover mb-0" style="font-size:12px">
+              <thead>
+                <tr>
+                  <th style="background:#f8f9fa">#</th>
+                  <th style="background:#f8f9fa">Цвет</th>
+                  <th style="background:#f8f9fa">Название</th>
+                  <th style="background:#f8f9fa" class="text-end">Действия</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for rt in result_types %}
+                <tr>
+                  <td class="text-muted">{{ loop.index }}</td>
+                  {# ── цветовая ячейка + пикер цвета ── #}
+                  <td style="width:60px">
+                    <form method="post" action="{{ url_for('admin.result_types_write') }}"
+                          class="d-flex align-items-center gap-1">
+                      <input type="hidden" name="action" value="edit">
+                      <input type="hidden" name="rid" value="{{ rt.id }}">
+                      <input type="hidden" name="name" value="{{ rt.name }}">
+                      <input type="color" name="color_hex"
+                             value="#{{ rt.color_hex }}"
+                             class="form-control form-control-color form-control-sm"
+                             style="width:36px;padding:2px"
+                             onchange="this.form.submit()"
+                             title="Кликните для смены цвета">
+                    </form>
+                  </td>
+                  {# ── инлайн-редактирование названия ── #}
+                  <td>
+                    <form method="post" class="d-flex gap-1 align-items-center"
+                          action="{{ url_for('admin.result_types_write') }}">
+                      <input type="hidden" name="action" value="edit">
+                      <input type="hidden" name="rid" value="{{ rt.id }}">
+                      <input type="hidden" name="color_hex" value="{{ rt.color_hex }}">
+                      <input type="text" name="name" class="form-control form-control-sm py-0"
+                             value="{{ rt.name }}" style="min-width:0">
+                      <button class="btn btn-sm btn-outline-secondary py-0 px-2" title="Сохранить">
+                        <i class="bi bi-check-lg"></i>
+                      </button>
+                    </form>
+                  </td>
+                  <td class="text-end">
+                    <form method="post" class="d-inline"
+                          action="{{ url_for('admin.result_types_write') }}"
+                          onsubmit="return confirm('Удалить итог?')">
+                      <input type="hidden" name="action" value="delete">
+                      <input type="hidden" name="rid" value="{{ rt.id }}">
+                      <button class="btn btn-sm btn-outline-danger py-0 px-2">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="text-center text-muted py-3">Нет значений</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ===== ОКВЭД ===== #}
   <div class="tab-pane fade" id="tab-okved">
     <div class="row g-3 mt-2">
-
       <div class="col-md-5">
         <div class="card p-3">
           <h6 class="mb-3" style="color:#1B5E7B">
             <i class="bi bi-info-circle me-1"></i>Статус классификатора ОКВЭД
           </h6>
-          <p class="mb-1" style="font-size:13px">
-            Всего записей: <strong>{{ okved_total }}</strong>
-          </p>
-          <p class="mb-2 text-muted" style="font-size:13px">
-            Последнее обновление: <strong>{{ okved_last_sync }}</strong>
-          </p>
-          <p class="mb-0 text-muted" style="font-size:12px">
-            При загрузке нового файла текущий классификатор полностью заменяется.
-          </p>
-
-          {# ── КНОПКА СИНХРОНИЗАЦИИ С ФНС «МОЙ ОКВЭД» ── #}
+          <p class="mb-1" style="font-size:13px">Всего записей: <strong>{{ okved_total }}</strong></p>
+          <p class="mb-2 text-muted" style="font-size:13px">Последнее обновление: <strong>{{ okved_last_sync }}</strong></p>
+          <p class="mb-0 text-muted" style="font-size:12px">При загрузке нового файла текущий классификатор полностью заменяется.</p>
           <hr class="my-3">
           <form action="{{ url_for('okved.okved_sync_my_okved') }}" method="post"
-                onsubmit="return confirm('Обновить справочник ОКВЭД из ФНС? Текущие данные будут перезаписаны.');">
+                onsubmit="return confirm('Обновить справочник ОКВЭД из ФНС? Текущие данные будут перезаписаны.')">
             <button type="submit" class="btn btn-sm btn-outline-primary">
               <i class="bi bi-arrow-repeat"></i> Обновить из ФНС «Мой ОКВЭД»
             </button>
           </form>
         </div>
       </div>
-
       <div class="col-md-7">
         <div class="card p-3">
-          <h6 class="mb-3" style="color:#1B5E7B">
-            <i class="bi bi-upload me-1"></i>Загрузка файла ОКВЭД
-          </h6>
+          <h6 class="mb-3" style="color:#1B5E7B"><i class="bi bi-upload me-1"></i>Загрузка файла ОКВЭД</h6>
           <form action="{{ url_for('okved.okved_upload') }}" method="post" enctype="multipart/form-data">
             <div class="mb-2">
-              <label class="form-label fw-bold" style="font-size:12px">
-                CSV-файл с классификатором ОКВЭД
-              </label>
+              <label class="form-label fw-bold" style="font-size:12px">CSV-файл с классификатором ОКВЭД</label>
               <input type="file" name="file" class="form-control form-control-sm" accept=".csv">
-              <div class="form-text" style="font-size:11px">
-                Ожидается CSV в кодировке UTF-8, разделитель «;». Колонки: код; наименование; parent_code (опционально).
-              </div>
+              <div class="form-text" style="font-size:11px">CSV UTF-8, разделитель «;». Колонки: код; наименование; parent_code (опционально).</div>
             </div>
             <button type="submit" class="btn btn-sm btn-primary">
               <i class="bi bi-upload"></i> Загрузить и заменить классификатор
@@ -172,20 +348,17 @@
           </form>
         </div>
       </div>
-
     </div>
   </div>
-  
+
 </div>
 
 <div class="card mt-4 p-3 border-warning">
-  <h6 class="mb-2 text-warning">
-    <i class="bi bi-bell-fill me-1"></i>Уведомления об обязательных полях
-  </h6>
+  <h6 class="mb-2 text-warning"><i class="bi bi-bell-fill me-1"></i>Уведомления об обязательных полях</h6>
   <p class="small text-muted mb-2">
     Если в форме обращения появляется новое обязательное поле — администратор получает
-    уведомления по всем карточкам, где оно не заполнено. Уведомления отображаются
-    в разделе <a href="{{ url_for('misc.notifications') }}">Уведомления</a>.
+    уведомления по всем карточкам, где оно не заполнено.
+    Уведомления отображаются в разделе <a href="{{ url_for('misc.notifications') }}">Уведомления</a>.
   </p>
   <div class="alert alert-light border small mb-0 p-2">
     <strong>Текущие обязательные поля:</strong>
@@ -200,4 +373,19 @@
     </ul>
   </div>
 </div>
+
+{# ===== АВТООТКРЫТИЕ ВКЛАДКИ ПО #}
+{# fragment-анкору (после POST-редиректа с #tab-subject / #tab-result) #}
+<script>
+(function () {
+  var hash = window.location.hash;
+  if (hash) {
+    var link = document.querySelector('#classTab a[href="' + hash + '"]');
+    if (link) {
+      var tab = new bootstrap.Tab(link);
+      tab.show();
+    }
+  }
+})();
+</script>
 {% endblock %}

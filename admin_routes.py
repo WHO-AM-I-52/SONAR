@@ -1,6 +1,7 @@
 # ╔══════════════════════════════════════════════════════════════╗
 # ║                      admin_routes.py                         ║
-# ║  v2.0: гибкие права, журнал входов                          ║
+# ║  v2.1: гибкие права, журнал входов,             ║
+# ║        справочники МинЭК (subject_types, result_types)  ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, jsonify
@@ -13,7 +14,7 @@ from auth_utils import login_required, admin_required, hash_pw, ALL_PERMISSIONS
 admin_bp = Blueprint('admin', __name__)
 
 
-# ─── СПРАВОЧНИКИ ──────────────────────────────────────────────────────────────
+# ─── СПРАВОЧНИКИ (основные) ──────────────────────────────────────────────
 
 @admin_bp.route('/admin/classifiers', methods=['GET', 'POST'])
 @login_required
@@ -63,15 +64,120 @@ def classifiers():
     row = conn.execute("SELECT value FROM settings WHERE key='okved_last_sync'").fetchone()
     okved_last_sync = row['value'] if row else '—'
 
+    # Справочники МинЭК
+    subject_types = conn.execute(
+        "SELECT * FROM subject_types ORDER BY id"
+    ).fetchall()
+    result_types = conn.execute(
+        "SELECT * FROM result_types ORDER BY id"
+    ).fetchall()
+
     conn.close()
     return render_template(
         'classifiers.html',
         legal_forms=lf, districts=di, source_types=src,
         okved_total=okved_total, okved_last_sync=okved_last_sync,
+        subject_types=subject_types,
+        result_types=result_types,
     )
 
 
-# ─── УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ ────────────────────────────────────────────────
+# ─── СПРАВОЧНИК «ПРЕДМЕТ ОБРАЩЕНИЯ» ──────────────────────────────────────
+
+@admin_bp.route('/admin/subject-types', methods=['POST'])
+@login_required
+@admin_required
+def subject_types_write():
+    conn  = get_db()
+    action = request.form.get('action')
+
+    if action == 'add':
+        name = request.form.get('name', '').strip()
+        if name:
+            try:
+                conn.execute("INSERT INTO subject_types (name) VALUES (?)", (name,))
+                conn.commit()
+                flash(f'Предмет «{name}» добавлен', 'success')
+            except Exception:
+                flash('Такой предмет уже есть', 'error')
+
+    elif action == 'rename':
+        sid  = request.form.get('sid')
+        name = request.form.get('name', '').strip()
+        if name:
+            conn.execute("UPDATE subject_types SET name=? WHERE id=?", (name, sid))
+            conn.commit()
+            flash('Предмет обновлён', 'success')
+
+    elif action == 'delete':
+        sid = request.form.get('sid')
+        # проверяем, что нет ссылок
+        used = conn.execute(
+            "SELECT COUNT(*) FROM requests WHERE subject_type_id=?", (sid,)
+        ).fetchone()[0]
+        if used:
+            flash(f'Нельзя удалить: используется в {used} обращениях', 'error')
+        else:
+            conn.execute("DELETE FROM subject_types WHERE id=?", (sid,))
+            conn.commit()
+            flash('Предмет удалён', 'success')
+
+    conn.close()
+    return redirect(url_for('admin.classifiers') + '#tab-subject')
+
+
+# ─── СПРАВОЧНИК «ИТОГИ РАБОТЫ» ─────────────────────────────────────────────
+
+@admin_bp.route('/admin/result-types', methods=['POST'])
+@login_required
+@admin_required
+def result_types_write():
+    conn   = get_db()
+    action = request.form.get('action')
+
+    if action == 'add':
+        name  = request.form.get('name', '').strip()
+        color = request.form.get('color_hex', 'FFFFFF').strip().lstrip('#').upper()
+        if name:
+            try:
+                conn.execute(
+                    "INSERT INTO result_types (name, color_hex) VALUES (?, ?)",
+                    (name, color)
+                )
+                conn.commit()
+                flash(f'Итог «{name}» добавлен', 'success')
+            except Exception:
+                flash('Такой итог уже есть', 'error')
+
+    elif action == 'edit':
+        rid   = request.form.get('rid')
+        name  = request.form.get('name', '').strip()
+        color = request.form.get('color_hex', 'FFFFFF').strip().lstrip('#').upper()
+        if name:
+            conn.execute(
+                "UPDATE result_types SET name=?, color_hex=? WHERE id=?",
+                (name, color, rid)
+            )
+            conn.commit()
+            flash('Итог обновлён', 'success')
+
+    elif action == 'delete':
+        rid  = request.form.get('rid')
+        used = conn.execute(
+            "SELECT COUNT(*) FROM requests WHERE result_type_id=?", (rid,)
+        ).fetchone()[0]
+        if used:
+            flash(f'Нельзя удалить: используется в {used} обращениях', 'error')
+        else:
+            conn.execute("DELETE FROM result_types WHERE id=?", (rid,))
+            conn.commit()
+            flash('Итог удалён', 'success')
+
+    conn.close()
+    return redirect(url_for('admin.classifiers') + '#tab-result')
+
+
+# ─── УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ ───────────────────────────────────────────
 
 @admin_bp.route('/admin/users', methods=['GET', 'POST'])
 @login_required
@@ -91,7 +197,6 @@ def manage_users():
 
             if un and pw2 and fn:
                 perms = {k: (1 if request.form.get(k) else 0) for k in ALL_PERMISSIONS}
-                # admin всегда получает все права
                 if ro == 'admin':
                     perms = {k: 1 for k in ALL_PERMISSIONS}
                 try:
@@ -150,7 +255,6 @@ def manage_users():
         "SELECT * FROM login_log ORDER BY id DESC LIMIT 50"
     ).fetchall()
 
-    # ─── Фильтры журнала действий (v2.0.1) ───────────────────────
     af_user   = request.args.get('af_user', '')
     af_action = request.args.get('af_action', '')
     af_date   = request.args.get('af_date', '')
@@ -176,7 +280,7 @@ def manage_users():
     )
 
 
-# ─── СОХРАНЁННЫЕ ФИЛЬТРЫ ──────────────────────────────────────────────────────
+# ─── СОХРАНЁННЫЕ ФИЛЬТРЫ ─────────────────────────────────────────────────
 
 @admin_bp.route('/saved-filters', methods=['GET', 'POST'])
 @login_required
@@ -263,35 +367,22 @@ def saved_filters():
 
         q2 = "SELECT COUNT(*) FROM requests r WHERE 1=1"
         p2 = []
-        if p.get('status'):
-            q2 += " AND r.status=?"; p2.append(p['status'])
-        if p.get('date_from'):
-            q2 += " AND r.request_date>=?"; p2.append(p['date_from'])
-        if p.get('date_to'):
-            q2 += " AND r.request_date<=?"; p2.append(p['date_to'])
+        if p.get('status'):      q2 += " AND r.status=?"; p2.append(p['status'])
+        if p.get('date_from'):   q2 += " AND r.request_date>=?"; p2.append(p['date_from'])
+        if p.get('date_to'):     q2 += " AND r.request_date<=?"; p2.append(p['date_to'])
         if p.get('applicant'):
             q2 += " AND (r.applicant_full_name LIKE ? OR r.applicant_short_name LIKE ?)"
             p2 += [f"%{p['applicant']}%"] * 2
-        if p.get('employee'):
-            q2 += " AND r.assigned_to=?"; p2.append(p['employee'])
-        if p.get('site_type_free') == '1':
-            q2 += " AND r.site_type_free=1"
-        if p.get('site_type_existing') == '1':
-            q2 += " AND r.site_type_existing=1"
-        if p.get('area_min'):
-            q2 += " AND r.site_area_ha_min>=?"; p2.append(float(p['area_min']))
-        if p.get('area_max'):
-            q2 += " AND r.site_area_ha_min<=?"; p2.append(float(p['area_max']))
-        if p.get('build_min'):
-            q2 += " AND r.site_build_area_m2_min>=?"; p2.append(float(p['build_min']))
-        if p.get('build_max'):
-            q2 += " AND r.site_build_area_m2_min<=?"; p2.append(float(p['build_max']))
-        if p.get('inv_min'):
-            q2 += " AND r.investment_total>=?"; p2.append(float(p['inv_min']))
-        if p.get('inv_max'):
-            q2 += " AND r.investment_total<=?"; p2.append(float(p['inv_max']))
-        if p.get('district'):
-            q2 += " AND r.preferred_districts LIKE ?"; p2.append(f"%{p['district']}%")
+        if p.get('employee'):    q2 += " AND r.assigned_to=?"; p2.append(p['employee'])
+        if p.get('site_type_free') == '1':      q2 += " AND r.site_type_free=1"
+        if p.get('site_type_existing') == '1':  q2 += " AND r.site_type_existing=1"
+        if p.get('area_min'):    q2 += " AND r.site_area_ha_min>=?"; p2.append(float(p['area_min']))
+        if p.get('area_max'):    q2 += " AND r.site_area_ha_min<=?"; p2.append(float(p['area_max']))
+        if p.get('build_min'):   q2 += " AND r.site_build_area_m2_min>=?"; p2.append(float(p['build_min']))
+        if p.get('build_max'):   q2 += " AND r.site_build_area_m2_min<=?"; p2.append(float(p['build_max']))
+        if p.get('inv_min'):     q2 += " AND r.investment_total>=?"; p2.append(float(p['inv_min']))
+        if p.get('inv_max'):     q2 += " AND r.investment_total<=?"; p2.append(float(p['inv_max']))
+        if p.get('district'):    q2 += " AND r.preferred_districts LIKE ?"; p2.append(f"%{p['district']}%")
 
         cnt = conn.execute(q2, p2).fetchone()[0]
         fwc.append({'row': row, 'params': p, 'count': cnt, 'qs': ''})
