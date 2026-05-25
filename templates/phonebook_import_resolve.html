@@ -1,0 +1,238 @@
+{% extends 'base.html' %}
+{% block title %}Импорт справочника{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width:860px;margin-top:2rem;">
+
+  {# ── Заголовок ── #}
+  <div class="d-flex align-items-center gap-3 mb-3">
+    <a href="{{ url_for('phonebook.phonebook') }}" class="btn btn-outline-secondary btn-sm">
+      ← Назад к справочнику
+    </a>
+    <h4 class="mb-0">
+      {% if preview_mode %}
+        ✅ Предпросмотр импорта
+      {% else %}
+        ⚠️ Найдены неизвестные организации
+      {% endif %}
+    </h4>
+  </div>
+
+  {# ── Ошибки парсинга ── #}
+  {% if parse_errors %}
+  <div class="alert alert-warning">
+    <strong>Предупреждения при чтении файла:</strong>
+    <ul class="mb-0 mt-1">
+      {% for e in parse_errors %}
+        <li>{{ e }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {# ══════════════════════════════════════════════════════════════
+     ШАГ 2: Разрешение организаций
+  ══════════════════════════════════════════════════════════════ #}
+  {% if not preview_mode %}
+
+  <div class="alert alert-info">
+    Найдено <strong>{{ rows_count }}</strong> контактов для импорта.<br>
+    Ниже перечислены организации из файла, которых <strong>нет в системе</strong>.
+    Для каждой выберите: создать новую или привязать к существующей.
+  </div>
+
+  <form method="POST" action="{{ url_for('pb_import.import_resolve_post') }}">
+
+    {% for org_name in unknown_orgs %}
+    {% set slug = org_name | replace(' ', '_') | replace('"', '') | replace("'", '') | truncate(60, True, '') %}
+    <div class="card mb-3 border-warning">
+      <div class="card-header bg-warning bg-opacity-10">
+        <strong>{{ org_name }}</strong>
+        <span class="text-muted ms-2" style="font-size:.85em;">— не найдена в базе</span>
+      </div>
+      <div class="card-body">
+
+        <div class="mb-2">
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="radio"
+                   name="org_action_{{ slug }}"
+                   id="create_{{ slug }}"
+                   value="create" checked
+                   onchange="toggleOrgMode('{{ slug }}', 'create')">
+            <label class="form-check-label" for="create_{{ slug }}">Создать новую организацию</label>
+          </div>
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="radio"
+                   name="org_action_{{ slug }}"
+                   id="map_{{ slug }}"
+                   value="map"
+                   onchange="toggleOrgMode('{{ slug }}', 'map')">
+            <label class="form-check-label" for="map_{{ slug }}">Привязать к существующей</label>
+          </div>
+        </div>
+
+        {# Панель: создать новую #}
+        <div id="panel_create_{{ slug }}">
+          <label class="form-label text-muted" style="font-size:.85em;">Название новой организации:</label>
+          <input type="text"
+                 class="form-control form-control-sm"
+                 name="org_new_name_{{ slug }}"
+                 value="{{ org_name }}"
+                 placeholder="Название организации">
+        </div>
+
+        {# Панель: привязать к существующей #}
+        <div id="panel_map_{{ slug }}" style="display:none;">
+          <label class="form-label text-muted" style="font-size:.85em;">Найдите и выберите организацию:</label>
+          <div class="d-flex gap-2 align-items-center">
+            <input type="text"
+                   class="form-control form-control-sm org-search-input"
+                   data-slug="{{ slug }}"
+                   placeholder="Начните вводить название..."
+                   autocomplete="off">
+            <input type="hidden"
+                   name="org_map_{{ slug }}"
+                   id="org_map_id_{{ slug }}"
+                   value="">
+          </div>
+          <div class="org-search-results mt-1" id="results_{{ slug }}" style="display:none;"></div>
+        </div>
+
+      </div>{# card-body #}
+    </div>{# card #}
+    {% endfor %}
+
+    <div class="d-flex gap-2 mt-3">
+      <button type="submit" class="btn btn-primary">
+        Продолжить → предпросмотр
+      </button>
+      <a href="{{ url_for('phonebook.phonebook') }}" class="btn btn-outline-secondary">
+        Отмена
+      </a>
+    </div>
+
+  </form>
+
+  {# ══════════════════════════════════════════════════════════════
+     ШАГ 3: Предпросмотр перед финальной загрузкой
+  ══════════════════════════════════════════════════════════════ #}
+  {% else %}
+
+  <div class="alert alert-success">
+    Готово к импорту: <strong>{{ rows_count }}</strong> контактов.
+    {% if rows_count > 10 %}
+      Ниже показаны первые 10 строк.
+    {% endif %}
+  </div>
+
+  <div class="table-responsive mb-4">
+    <table class="table table-sm table-bordered table-hover">
+      <thead class="table-dark">
+        <tr>
+          <th>Организация</th><th>ФИО</th><th>Должность</th>
+          <th>Каб.</th><th>Раб. тел.</th><th>Email</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows_preview %}
+        <tr>
+          <td>{{ r.org_name or '—' }}</td>
+          <td>{{ r.full_name }}</td>
+          <td>{{ r.position or '—' }}</td>
+          <td>{{ r.room or '—' }}</td>
+          <td>{{ r.phone_work or '—' }}</td>
+          <td>{{ r.email or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <form method="POST" action="{{ url_for('pb_import.import_confirm_post') }}">
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn-success">
+        ✅ Загрузить {{ rows_count }} контактов в базу
+      </button>
+      <a href="{{ url_for('phonebook.phonebook') }}" class="btn btn-outline-secondary">
+        Отмена
+      </a>
+    </div>
+  </form>
+
+  {% endif %}
+
+</div>{# container #}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Переключение панелей создать/привязать ────────────────────────────────
+function toggleOrgMode(slug, mode) {
+  document.getElementById('panel_create_' + slug).style.display = (mode === 'create') ? '' : 'none';
+  document.getElementById('panel_map_' + slug).style.display    = (mode === 'map')    ? '' : 'none';
+}
+
+// ── Живой поиск организаций ───────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('.org-search-input').forEach(function (input) {
+    const slug    = input.dataset.slug;
+    const results = document.getElementById('results_' + slug);
+    const hiddenId = document.getElementById('org_map_id_' + slug);
+    let debounce;
+
+    input.addEventListener('input', function () {
+      clearTimeout(debounce);
+      const q = this.value.trim();
+      if (q.length < 1) { results.style.display = 'none'; return; }
+
+      debounce = setTimeout(function () {
+        fetch('/phonebook/import/orgs_search?q=' + encodeURIComponent(q))
+          .then(r => r.json())
+          .then(function (data) {
+            results.innerHTML = '';
+            if (!data.length) {
+              results.innerHTML = '<div class="text-muted p-2" style="font-size:.85em;">Ничего не найдено</div>';
+            } else {
+              data.forEach(function (org) {
+                const item = document.createElement('div');
+                item.className = 'org-search-item p-2';
+                item.style.cssText = 'cursor:pointer;border-bottom:1px solid #eee;font-size:.9em;';
+                item.textContent = org.name;
+                item.addEventListener('mouseenter', () => item.style.background = '#f0f4ff');
+                item.addEventListener('mouseleave', () => item.style.background = '');
+                item.addEventListener('click', function () {
+                  input.value   = org.name;
+                  hiddenId.value = org.id;
+                  results.style.display = 'none';
+                });
+                results.appendChild(item);
+              });
+            }
+            results.style.display = 'block';
+          });
+      }, 250);
+    });
+
+    // Скрываем по клику вне поиска
+    document.addEventListener('click', function (e) {
+      if (!input.contains(e.target) && !results.contains(e.target)) {
+        results.style.display = 'none';
+      }
+    });
+  });
+});
+</script>
+
+<style>
+.org-search-results {
+  background: #fff;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  position: relative;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0,0,0,.12);
+}
+</style>
+{% endblock %}
