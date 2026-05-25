@@ -1,21 +1,17 @@
 # ╔══════════════════════════════════════════════════════════════╗
 # ║                       export_routes.py                       ║
-# ║  v2.2: выгрузка Excel + маршрут МинЭК                        ║
+# ║  v2.3: МинЭК — 12 колонок, точное соответствие файлу        ║
 # ╚══════════════════════════════════════════════════════════════╝
 
-from flask import Blueprint, request, redirect, url_for, send_file, jsonify, session
+from flask import Blueprint, request, send_file, jsonify
 from datetime import datetime, date, timedelta
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-import re
 import os
 
 from db import get_db, REPORTS_DIR
 from auth_utils import login_required
-
-
-# ─── НАСТРОЙКИ BLUEPRINT ─────────────────────────────────────────────────────
 
 report_bp = Blueprint('report', __name__)
 
@@ -23,11 +19,6 @@ report_bp = Blueprint('report', __name__)
 # ─── ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ─────────────────────────────────────────────────
 
 def _short_fio(full_name: str) -> str:
-    """
-    Преобразует полное ФИО в формат «Фамилия И.О.».
-    Пример: 'Иванов Иван Иванович' → 'Иванов И.И.'
-    Если частей недостаточно — возвращает как есть.
-    """
     if not full_name:
         return '—'
     parts = full_name.strip().split()
@@ -44,9 +35,6 @@ def _std_border(color='CCCCCC'):
 
 
 def _hex_to_argb(hex_color: str) -> str:
-    """
-    Приводит '#RRGGBB' или 'RRGGBB' в 'FFRRGGBB' для openpyxl PatternFill.
-    """
     c = hex_color.lstrip('#').upper()
     if len(c) == 6:
         return 'FF' + c
@@ -56,7 +44,6 @@ def _hex_to_argb(hex_color: str) -> str:
 
 
 def _fmt_date(iso: str) -> str:
-    """Форматирует ISO-дату YYYY-MM-DD → DD.MM.YYYY (fallback: как есть)."""
     try:
         return datetime.strptime(iso, '%Y-%m-%d').strftime('%d.%m.%Y')
     except Exception:
@@ -64,20 +51,32 @@ def _fmt_date(iso: str) -> str:
 
 
 def _mln_to_mld(val) -> str:
-    """
-    Конвертирует значение инвестиций из млн руб. в млрд руб.
-    Возвращает строку с точностью до 3 знаков (без незначимых нулей).
-    Если val пустой / нечисловой — возвращает '—'.
-    """
+    """Млн руб. → млрд руб. (делим на 1000)."""
     if val is None or val == '':
         return '—'
     try:
         mld = float(str(val).replace(',', '.')) / 1000
-        # убираем незначимые нули: 1.000 → 1, 0.500 → 0.5
-        formatted = f"{mld:.3f}".rstrip('0').rstrip('.')
-        return formatted
+        return f"{mld:.3f}".rstrip('0').rstrip('.')
     except (ValueError, TypeError):
         return str(val)
+
+
+def _contact_cell(person: str, phone: str, email: str) -> str:
+    """
+    Собирает контактное лицо + телефон + email в одну ячейку
+    через перенос строки — как в оригинальном файле МинЭК:
+      Ф.И.О. Иванов Иван Иванович
+      Тел: +7 900 000 00 00
+      ivanov@mail.ru
+    """
+    parts = []
+    if person and person.strip():
+        parts.append(f"Ф.И.О. {person.strip()}")
+    if phone and phone.strip():
+        parts.append(f"Тел: {phone.strip()}")
+    if email and email.strip():
+        parts.append(email.strip())
+    return '\n'.join(parts) if parts else '—'
 
 
 # ─── СТАНДАРТНАЯ ВЫГРУЗКА ─────────────────────────────────────────────────────
@@ -97,14 +96,11 @@ def report():
          "WHERE 1=1")
     p = []
     if df:
-        q += ' AND r.request_date>=?'
-        p.append(df)
+        q += ' AND r.request_date>=?'; p.append(df)
     if dt:
-        q += ' AND r.request_date<=?'
-        p.append(dt)
+        q += ' AND r.request_date<=?'; p.append(dt)
     if sf:
-        q += ' AND r.status=?'
-        p.append(sf)
+        q += ' AND r.status=?'; p.append(sf)
 
     rows = conn.execute(q + ' ORDER BY r.request_date', p).fetchall()
     conn.close()
@@ -148,9 +144,7 @@ def report():
     ]
     for ci, h in enumerate(hdrs, 1):
         c = ws.cell(row=3, column=ci, value=h)
-        c.fill = hfill
-        c.font = hfont
-        c.border = br
+        c.fill = hfill; c.font = hfont; c.border = br
         c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
     ws.row_dimensions[3].height = 38
 
@@ -166,7 +160,7 @@ def report():
             r['contact_person'] or '—',
             r['contact_phone'] or '—',
             r['contact_email'] or '—',
-            r['investment_total'],          # в стандартной выгрузке — как есть (млн)
+            r['investment_total'],
             r['jobs_total'],
             r['site_area_ha'],
             r['site_build_area_m2'],
@@ -177,8 +171,7 @@ def report():
         ]
         for ci, val in enumerate(vals, 1):
             c = ws.cell(row=ri, column=ci, value=val)
-            c.fill = fill
-            c.border = br
+            c.fill = fill; c.border = br
             c.alignment = Alignment(vertical='center', wrap_text=True)
         ws.row_dimensions[ri].height = 16
 
@@ -191,30 +184,33 @@ def report():
     fn = f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
     fp = os.path.join(REPORTS_DIR, fn)
     wb.save(fp)
-
-    return send_file(
-        fp, as_attachment=True, download_name=fn,
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    )
+    return send_file(fp, as_attachment=True, download_name=fn,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
 # ─── ЕЖЕНЕДЕЛЬНАЯ ВЫГРУЗКА ДЛЯ МИНЭК ─────────────────────────────────────────
+#
+#  Структура — ТОЧНОЕ соответствие оригинальному файлу МинЭК (12 колонок):
+#
+#   A  │ №                              │ порядковый номер строки
+#   B  │ Дата обращения                 │ request_date
+#   C  │ Наименование компании          │ applicant_short_name / applicant_full_name
+#   D  │ Наименование проекта           │ project_name
+#   E  │ Объем инвестиций, млрд рублей  │ investment_total (млн) / 1000
+#   F  │ Рабочие места                  │ jobs_total
+#   G  │ Предмет обращения              │ subject_type_name
+#   H  │ Дата направления презентации   │ answer_date
+#   I  │ Дата получения обратной связи  │ feedback_date
+#   J  │ Итоги работы по обращению      │ additional_info → result_type_name
+#   K  │ Менеджер                       │ assigned_name (сокращённо Фамилия И.О.)
+#   L  │ Телефон, контактное лицо       │ contact_person + contact_phone + contact_email
+#
+# ─────────────────────────────────────────────────────────────────────────────
 
 @report_bp.route('/report/minek')
 @login_required
 def report_minek():
-    """
-    Еженедельная выгрузка для МинЭК.
-
-    Query-параметры:
-      date_from, date_to  — диапазон дат (по умолчанию: текущая неделя)
-      status              — фильтр по статусу (по умолчанию: все)
-
-    Файл содержит два листа:
-      1. 'Обращения' — основная таблица
-      2. 'Легенда'    — расшифровка цветов из result_types
-    """
-    today = date.today()
+    today      = date.today()
     week_start = today - timedelta(days=today.weekday())
     week_end   = week_start + timedelta(days=6)
 
@@ -241,32 +237,14 @@ def report_minek():
     """
     p = [df, dt]
     if sf:
-        q += ' AND r.status = ?'
-        p.append(sf)
+        q += ' AND r.status = ?'; p.append(sf)
     q += ' ORDER BY r.request_date, r.id'
 
     rows = conn.execute(q, p).fetchall()
-
     result_types = conn.execute(
         'SELECT id, name, color_hex FROM result_types ORDER BY id'
     ).fetchall()
-
     conn.close()
-
-    sm = {
-        'draft':    'Черновик',
-        'review':   'На проверке',
-        'accepted': 'В работе',
-        'answered': 'Отвечено',
-    }
-
-    # ══════════════════════════════════════════════════════════════
-    # ЛИСТ 1 — ОБРАЩЕНИЯ
-    # ══════════════════════════════════════════════════════════════
-
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = 'Обращения'
 
     HEADER_COLOR = '1B5E7B'
     hfill = PatternFill('solid', fgColor=HEADER_COLOR)
@@ -274,7 +252,14 @@ def report_minek():
     alt   = PatternFill('solid', fgColor='EAF4FB')
     br    = _std_border()
 
-    NCOLS = 21
+    # ══ ЛИСТ 1: ЗАЯВКИ ═══════════════════════════════════════════════════════
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Заявки'          # как в оригинальном файле МинЭК
+
+    NCOLS = 12
+
     ws.merge_cells(f'A1:{get_column_letter(NCOLS)}1')
     ws['A1'].value = (
         f"Еженедельный доклад МинЭК: обращения за период "
@@ -292,110 +277,90 @@ def report_minek():
     ws['A2'].font      = Font(italic=True, size=9, color='888888')
     ws['A2'].alignment = Alignment(horizontal='center')
 
+    # Заголовки — ТОЧНО как в оригинале
     HEADERS = [
-        '№',                                  # A
-        'Дата обращения',                     # B
-        'Статус',                             # C
-        'Источник',                           # D
-        'Предмет обращения',                  # E
-        'Наименование компании',              # F
-        'Наименование проекта',               # G
-        'Контактное лицо',                    # H
-        'Телефон, контактное лицо',           # I
-        'Объем инвестиций, млрд рублей',      # J  ← млрд (конвертируется из млн)
-        'Рабочие места',                      # K
-        'Площадь (га)',                       # L
-        'Застройка (м²)',                     # M
-        'Право пользования',                  # N
-        'Районы',                             # O
-        'Менеджер',                           # P  (ФИО сокращённо)
-        'Дата направления презентации',       # Q  ← данные из answer_date
-        'Дата получения обратной связи',      # R  (feedback_date)
-        'Итоги работы по обращению',          # S  (result_type_name)
-        'Доп. сведения',                      # T
-        'Номер обращения',                    # U
+        '',                                           # A  — пустой, как в оригинале
+        'Дата обращения',                             # B
+        'Наименование компании',                      # C
+        'Наименование проекта',                       # D
+        'Объем инвестиций,\nмлрд рублей',             # E
+        'Рабочие места',                              # F
+        'Предмет обращения',                          # G
+        'Дата направления презентации',               # H
+        'Дата получения обратной связи',              # I
+        'Итоги работы по обращению',                  # J
+        'Менеджер',                                   # K
+        'Телефон, контактное лицо',                   # L
     ]
 
     for ci, h in enumerate(HEADERS, 1):
         c = ws.cell(row=3, column=ci, value=h)
-        c.fill = hfill
-        c.font = hfont
-        c.border = br
+        c.fill = hfill; c.font = hfont; c.border = br
         c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
     ws.row_dimensions[3].height = 40
 
+    # Данные
     for ri, r in enumerate(rows, 4):
         base_fill = alt if ri % 2 == 0 else PatternFill('solid', fgColor='FFFFFF')
         row_color = r['result_color'] if r['result_color'] else None
-        if row_color:
-            rfill = PatternFill('solid', fgColor=_hex_to_argb(row_color))
-        else:
-            rfill = base_fill
+        rfill = PatternFill('solid', fgColor=_hex_to_argb(row_color)) if row_color else base_fill
+
+        # Итоги: сначала текстовое значение из additional_info, затем из справочника
+        result_val = r['additional_info'] or r['result_type_name'] or '—'
 
         vals = [
-            ri - 3,                                                          # A №
-            r['request_date'] or '—',                                        # B
-            sm.get(r['status'], r['status']),                                # C
-            r['source_type'] or '—',                                         # D
-            r['subject_type_name'] or '—',                                   # E
-            r['applicant_short_name'] or r['applicant_full_name'] or '—',    # F
-            r['project_name'] or '—',                                        # G
-            r['contact_person'] or '—',                                      # H
-            r['contact_phone'] or '—',                                       # I
-            _mln_to_mld(r['investment_total']),                              # J  млн→млрд
-            r['jobs_total'],                                                 # K
-            r['site_area_ha'],                                               # L
-            r['site_build_area_m2'],                                         # M
-            r['site_right'] or '—',                                          # N
-            r['preferred_districts'] or '—',                                 # O
-            _short_fio(r['assigned_name'] or r['employee_name']),            # P
-            r['answer_date'] or '—',                                         # Q  answer_date
-            r['feedback_date'] or '—',                                       # R
-            r['result_type_name'] or '—',                                    # S
-            r['additional_info'] or '—',                                     # T
-            r['request_number'] or '—',                                      # U
+            ri - 3,                                                        # A  №
+            r['request_date'] or '—',                                      # B
+            r['applicant_short_name'] or r['applicant_full_name'] or '—',  # C
+            r['project_name'] or '—',                                      # D
+            _mln_to_mld(r['investment_total']),                            # E  млн→млрд
+            r['jobs_total'] or '—',                                        # F
+            r['subject_type_name'] or '—',                                 # G
+            r['answer_date'] or '—',                                       # H
+            r['feedback_date'] or '—',                                     # I
+            result_val,                                                    # J
+            _short_fio(r['assigned_name'] or r['employee_name']),          # K
+            _contact_cell(                                                 # L
+                r['contact_person'],
+                r['contact_phone'],
+                r['contact_email'],
+            ),
         ]
 
         for ci, val in enumerate(vals, 1):
             c = ws.cell(row=ri, column=ci, value=val)
             c.fill   = rfill
             c.border = br
-            c.alignment = Alignment(vertical='center', wrap_text=(ci not in (1, 9, 17, 18)))
-        ws.row_dimensions[ri].height = 18
+            c.alignment = Alignment(
+                vertical='center',
+                wrap_text=True,
+                horizontal='center' if ci == 1 else 'left',
+            )
+        ws.row_dimensions[ri].height = 30
 
+    # Ширины столбцов
     col_widths = [
-        5,   # A №
-        12,  # B дата
-        14,  # C статус
-        16,  # D источник
-        22,  # E предмет
-        28,  # F компания
-        30,  # G проект
-        20,  # H контакт
-        22,  # I телефон
-        14,  # J инвестиции (млрд)
-        10,  # K рабочих мест
-        10,  # L площадь
-        12,  # M застройка
-        16,  # N право
-        24,  # O районы
-        16,  # P менеджер
-        20,  # Q дата презентации
-        20,  # R обр. связь
-        26,  # S итоги
-        30,  # T доп. сведения
-        16,  # U номер
+        5,   # A  №
+        13,  # B  дата
+        28,  # C  компания
+        35,  # D  проект
+        12,  # E  инвестиции (млрд)
+        12,  # F  рабочие места
+        22,  # G  предмет
+        16,  # H  дата презентации
+        16,  # I  дата обр. связи
+        30,  # J  итоги
+        16,  # K  менеджер
+        32,  # L  телефон/контакт
     ]
     for ci, w in enumerate(col_widths, 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
 
     ws.freeze_panes = 'B4'
 
-    # ══════════════════════════════════════════════════════════════
-    # ЛИСТ 2 — ЛЕГЕНДА ЦВЕТОВ
-    # ══════════════════════════════════════════════════════════════
+    # ══ ЛИСТ 2: СПРАВОЧНИК (ЛЕГЕНДА) ══════════════════════════════════════════
 
-    wl = wb.create_sheet(title='Легенда')
+    wl = wb.create_sheet(title='Справочник')   # как в оригинале
 
     wl.merge_cells('A1:C1')
     wl['A1'].value     = 'Легенда цветов (итоги работы по обращению)'
@@ -403,7 +368,7 @@ def report_minek():
     wl['A1'].alignment = Alignment(horizontal='center')
     wl.row_dimensions[1].height = 22
 
-    for ci, h in enumerate(['Цвет', 'Итог', 'Описание'], 1):
+    for ci, h in enumerate(['Цвет', 'Итог', 'Обозначение'], 1):
         c = wl.cell(row=2, column=ci, value=h)
         c.fill = PatternFill('solid', fgColor=HEADER_COLOR)
         c.font = Font(bold=True, color='FFFFFF', size=10)
@@ -413,24 +378,16 @@ def report_minek():
 
     if result_types:
         for li, rt in enumerate(result_types, 3):
-            color_hex = rt['color_hex'] or 'FFFFFF'
-            argb      = _hex_to_argb(color_hex)
-
+            argb = _hex_to_argb(rt['color_hex'] or 'FFFFFF')
             ca = wl.cell(row=li, column=1, value='')
-            ca.fill   = PatternFill('solid', fgColor=argb)
-            ca.border = _std_border()
-
+            ca.fill = PatternFill('solid', fgColor=argb); ca.border = _std_border()
             cb = wl.cell(row=li, column=2, value=rt['name'])
-            cb.fill   = PatternFill('solid', fgColor=argb)
-            cb.font   = Font(bold=True, size=10)
-            cb.border = _std_border()
+            cb.fill = PatternFill('solid', fgColor=argb)
+            cb.font = Font(bold=True, size=10); cb.border = _std_border()
             cb.alignment = Alignment(vertical='center')
-
-            cc = wl.cell(row=li, column=3, value=color_hex)
-            cc.font   = Font(italic=True, size=9, color='888888')
-            cc.border = _std_border()
+            cc = wl.cell(row=li, column=3, value=rt['color_hex'])
+            cc.font = Font(italic=True, size=9, color='888888'); cc.border = _std_border()
             cc.alignment = Alignment(vertical='center')
-
             wl.row_dimensions[li].height = 18
     else:
         wl.cell(row=3, column=1,
@@ -440,19 +397,15 @@ def report_minek():
     wl.column_dimensions['B'].width = 36
     wl.column_dimensions['C'].width = 12
 
-    # ── Сохранение файла ──────────────────────────────────────────
+    # ── Сохранение ────────────────────────────────────────────────────────────
     fn = f"minek_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
     fp = os.path.join(REPORTS_DIR, fn)
     wb.save(fp)
-
-    return send_file(
-        fp, as_attachment=True,
-        download_name=fn,
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    )
+    return send_file(fp, as_attachment=True, download_name=fn,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
-# ─── AUTOSAVE / WAL CHECKPOINT ──────────────────────────────────────────────
+# ─── AUTOSAVE / WAL CHECKPOINT ───────────────────────────────────────────────
 
 @report_bp.route('/autosave', methods=['POST'])
 @login_required
