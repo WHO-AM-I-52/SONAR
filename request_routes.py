@@ -1,6 +1,6 @@
 # ╔══════════════════════════════════════════════════════════════╗
 # ║ request_routes.py                                            ║
-# ║ v2.0: логирование действий пользователей                    ║
+# ║ v2.1: поддержка новых полей МинЭК (предмет, итоги)    ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 from flask import (
@@ -24,7 +24,7 @@ from ocr_utils import extract_anketa_fields
 requests_bp = Blueprint('requests', __name__)
 
 
-# ─── СПИСОК ОБРАЩЕНИЙ + ФИЛЬТРЫ ──────────────────────────────────────────────
+# ─── СПИСОК ОБРАЩЕНИЙ + ФИЛЬТРЫ ────────────────────────────────────────────
 
 @requests_bp.route('/')
 @login_required
@@ -146,7 +146,7 @@ def index():
     )
 
 
-# ─── ДАШБОРД ─────────────────────────────────────────────────────────────────
+# ─── ДАШБОРД ─────────────────────────────────────────────────────────────────────
 
 @requests_bp.route('/dashboard')
 @login_required
@@ -158,7 +158,7 @@ def dashboard():
     return render_template('dashboard.html', dash=dash)
 
 
-# ─── СОЗДАНИЕ ОБРАЩЕНИЯ ──────────────────────────────────────────────────────
+# ─── СОЗДАНИЕ ОБРАЩЕНИЯ ────────────────────────────────────────────────────────
 
 @requests_bp.route('/request/new', methods=['GET', 'POST'])
 @login_required
@@ -167,35 +167,28 @@ def new_request():
 
     if request.method == 'POST':
         now    = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        action = request.form.get('action', 'save')  # 'ocr' или 'save'
+        action = request.form.get('action', 'save')
 
-        # ── Ветка OCR: отдельная кнопка, без сохранения ──
+        # ── Ветка OCR ─────────────────────────────────────────────────────
         if action == 'ocr':
             ocr_file = request.files.get('ocr_form')
-
             if not ocr_file or not ocr_file.filename:
                 flash('Не выбран файл анкеты для OCR.', 'warning')
                 conn.close()
-
-                # заново берём классификаторы для формы
                 conn2 = get_db()
-                lf2, di2, src2, emp2 = get_classifiers(conn2)
+                lf2, di2, src2, emp2, subjects2, results2 = get_classifiers(conn2)
                 conn2.close()
-
                 return render_template(
-                    'form.html',
-                    req=None,
-                    today=date.today().isoformat(),
+                    'form.html', req=None, today=date.today().isoformat(),
                     legal_forms=lf2, districts=di2, source_types=src2,
-                    employees=emp2, required_fields=REQUIRED_FIELDS
+                    employees=emp2, required_fields=REQUIRED_FIELDS,
+                    subjects=subjects2, results=results2
                 )
 
-            # Формируем временное имя, не блокируясь из-за отсутствия расширения
             orig_name = ocr_file.filename or ''
             safe_orig = secure_filename(orig_name)
             _, ext = os.path.splitext(safe_orig)
             ext = (ext or '').lower()
-
             tmp_name = f'_ocr_tmp_anketa{ext}'
             tmp_path = os.path.join(UPLOADS_DIR, tmp_name)
 
@@ -209,10 +202,8 @@ def new_request():
                     pass
 
             conn.close()
-
-            # заново берём классификаторы для формы
             conn2 = get_db()
-            lf2, di2, src2, emp2 = get_classifiers(conn2)
+            lf2, di2, src2, emp2, subjects2, results2 = get_classifiers(conn2)
             conn2.close()
 
             if fields:
@@ -220,37 +211,30 @@ def new_request():
                 for k, v in fields.items():
                     if k in fake_req:
                         fake_req[k] = v
-
                 flash(
                     'Анкета распознана: часть полей заполнена автоматически. '
-                    'Проверьте перед сохранением.',
-                    'success'
+                    'Проверьте перед сохранением.', 'success'
                 )
                 return render_template(
-                    'form.html',
-                    req=fake_req,
-                    today=date.today().isoformat(),
+                    'form.html', req=fake_req, today=date.today().isoformat(),
                     legal_forms=lf2, districts=di2, source_types=src2,
                     employees=emp2, required_fields=REQUIRED_FIELDS,
-                    ocr_message=msg
+                    subjects=subjects2, results=results2, ocr_message=msg
                 )
             else:
                 flash(
                     'Я ещё не слишком умный и не смог сопоставить данные анкеты. '
-                    'Заполните поля вручную.',
-                    'warning'
+                    'Заполните поля вручную.', 'warning'
                 )
                 return render_template(
-                    'form.html',
-                    req=None,
-                    today=date.today().isoformat(),
+                    'form.html', req=None, today=date.today().isoformat(),
                     legal_forms=lf2, districts=di2, source_types=src2,
                     employees=emp2, required_fields=REQUIRED_FIELDS,
-                    ocr_message=msg if "msg" in locals() else ''
+                    subjects=subjects2, results=results2,
+                    ocr_message=msg if 'msg' in locals() else ''
                 )
 
-        # ── Обычная ветка сохранения обращения ──
-
+        # ── Обычная ветка сохранения ─────────────────────────────────
         inn = request.form.get('applicant_inn', '').strip()
         ok_inn, inn_reason = validate_inn(inn)
         if inn_reason == 'format':
@@ -286,26 +270,23 @@ def new_request():
         )
         log_action(conn, session['user_id'], 'create', new_id,
                    f'Создано обращение: {applicant}')
-
         conn.commit()
         conn.close()
         flash('Обращение сохранено', 'success')
         return redirect(url_for('requests.index'))
 
-    # ── GET: чистая форма ──
-    # при GET нам нужны только классификаторы
-    lf, di, src, emp = get_classifiers(conn)
+    # ── GET: чистая форма ─────────────────────────────────────────────
+    lf, di, src, emp, subjects, results = get_classifiers(conn)
     conn.close()
     return render_template(
-        'form.html',
-        req=None,
-        today=date.today().isoformat(),
+        'form.html', req=None, today=date.today().isoformat(),
         legal_forms=lf, districts=di, source_types=src,
-        employees=emp, required_fields=REQUIRED_FIELDS
+        employees=emp, required_fields=REQUIRED_FIELDS,
+        subjects=subjects, results=results
     )
 
 
-# ─── РЕДАКТИРОВАНИЕ ОБРАЩЕНИЯ ────────────────────────────────────────────────
+# ─── РЕДАКТИРОВАНИЕ ОБРАЩЕНИЯ ──────────────────────────────────────────────
 
 @requests_bp.route('/request/<int:rid>', methods=['GET', 'POST'])
 @login_required
@@ -367,20 +348,22 @@ def edit_request(rid):
         reason_str = f' | Причина: {edit_reason}' if edit_reason else ''
         log_action(conn, session['user_id'], 'edit', rid,
                    f'Обращение {num}{reason_str}')
-
         conn.commit()
         conn.close()
         flash('Обращение обновлено', 'success')
         return redirect(url_for('requests.index'))
 
-    lf, di, src, emp = get_classifiers(conn)
+    lf, di, src, emp, subjects, results = get_classifiers(conn)
     conn.close()
-    return render_template('form.html', req=req, today=date.today().isoformat(),
-                           legal_forms=lf, districts=di, source_types=src,
-                           employees=emp, required_fields=REQUIRED_FIELDS)
+    return render_template(
+        'form.html', req=req, today=date.today().isoformat(),
+        legal_forms=lf, districts=di, source_types=src,
+        employees=emp, required_fields=REQUIRED_FIELDS,
+        subjects=subjects, results=results
+    )
 
 
-# ─── ПРОСМОТР ОБРАЩЕНИЯ ──────────────────────────────────────────────────────
+# ─── ПРОСМОТР ОБРАЩЕНИЯ ────────────────────────────────────────────────────
 
 @requests_bp.route('/view/<int:rid>')
 @login_required
@@ -388,12 +371,15 @@ def view_request(rid):
     conn = get_db()
     req  = conn.execute(
         "SELECT r.*, u.full_name AS employee_name, ass.full_name AS assigned_name, "
-        "adm.full_name AS admin_name, upd.full_name AS updated_by_name "
+        "adm.full_name AS admin_name, upd.full_name AS updated_by_name, "
+        "st.name AS subject_type_name, rt.name AS result_type_name, rt.color_hex AS result_color "
         "FROM requests r "
         "LEFT JOIN users u   ON r.created_by   = u.id "
         "LEFT JOIN users ass ON r.assigned_to  = ass.id "
         "LEFT JOIN users adm ON r.confirmed_by = adm.id "
         "LEFT JOIN users upd ON r.updated_by   = upd.id "
+        "LEFT JOIN subject_types st ON r.subject_type_id = st.id "
+        "LEFT JOIN result_types  rt ON r.result_type_id  = rt.id "
         "WHERE r.id=?", (rid,)
     ).fetchone()
     if not req:
@@ -434,7 +420,7 @@ def request_history_view(rid):
     return render_template('history.html', history=history, req=req, rid=rid)
 
 
-# ─── ОТКАТ ───────────────────────────────────────────────────────────────────
+# ─── ОТКАТ ──────────────────────────────────────────────────────────────────────
 
 @requests_bp.route('/view/<int:rid>/rollback/<int:hid>', methods=['POST'])
 @login_required
@@ -453,7 +439,7 @@ def rollback_request(rid, hid):
     return redirect(url_for('requests.view_request', rid=rid))
 
 
-# ─── ПОДТВЕРЖДЕНИЕ / ВОЗВРАТ ─────────────────────────────────────────────────
+# ─── ПОДТВЕРЖДЕНИЕ / ВОЗВРАТ ───────────────────────────────────────────
 
 @requests_bp.route('/request/<int:rid>/confirm', methods=['POST'])
 @login_required
@@ -519,7 +505,7 @@ def confirm_request(rid):
     return redirect(url_for('requests.view_request', rid=rid))
 
 
-# ─── ФИКСАЦИЯ ОТВЕТА ─────────────────────────────────────────────────────────
+# ─── ФИКСАЦИЯ ОТВЕТА ──────────────────────────────────────────────────────
 
 @requests_bp.route('/request/<int:rid>/answer', methods=['POST'])
 @login_required
@@ -556,7 +542,7 @@ def answer_request(rid):
     return redirect(url_for('requests.view_request', rid=rid))
 
 
-# ─── СМЕНА СТАТУСА ───────────────────────────────────────────────────────────
+# ─── СМЕНА СТАТУСА ────────────────────────────────────────────────────────────
 
 @requests_bp.route('/request/<int:rid>/status', methods=['POST'])
 @login_required
@@ -576,7 +562,7 @@ def change_status(rid):
     return redirect(url_for('requests.view_request', rid=rid))
 
 
-# ─── ИЗБРАННОЕ ───────────────────────────────────────────────────────────────
+# ─── ИЗБРАННОЕ ──────────────────────────────────────────────────────────────
 
 @requests_bp.route('/request/<int:rid>/favorite', methods=['POST'])
 @login_required
@@ -599,7 +585,7 @@ def toggle_favorite(rid):
     return redirect(request.referrer or url_for('requests.index'))
 
 
-# ─── УДАЛЕНИЕ ────────────────────────────────────────────────────────────────
+# ─── УДАЛЕНИЕ ──────────────────────────────────────────────────────────────
 
 @requests_bp.route('/request/<int:rid>/delete', methods=['POST'])
 @login_required
@@ -629,7 +615,7 @@ def uploaded_file(filename):
     return send_file(os.path.join(UPLOADS_DIR, filename), as_attachment=True)
 
 
-# ─── ПРИСВОЕНИЕ НОМЕРА ───────────────────────────────────────────────────────
+# ─── ПРИСВОЕНИЕ НОМЕРА ──────────────────────────────────────────────────────
 
 @requests_bp.route('/request/<int:rid>/assign_number', methods=['POST'])
 @login_required
