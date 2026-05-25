@@ -32,9 +32,14 @@ ALL_FIELDS = [
     "staff_management", "staff_workers", "staff_other", "staff_it", "staff_admin",
     "raw_materials", "raw_extra", "additional_info",
     "assigned_to",
+    # ─ Сведения об ответе ──────────────────────────────────────────
     "answer_date", "answer_method", "answer_method_other", "answer_notes", "answer_file",
     "request_files",
     "edit_reason",
+    # ─ МинЭК: новые поля (добавлены через миграцию db.py) ───────────
+    "subject_type_id",   # Предмет обращения (FK → subject_types)
+    "feedback_date",     # Дата получения обратной связи
+    "result_type_id",    # Итоги работы по обращению (FK → result_types)
 ]
 
 # Наборы полей по типу
@@ -45,7 +50,8 @@ BOOL_F = {
 
 INT_F = {
     "jobs_total", "jobs_foreign", "phones_qty", "staff_management",
-    "staff_workers", "staff_other", "staff_it", "staff_admin", "assigned_to"
+    "staff_workers", "staff_other", "staff_it", "staff_admin", "assigned_to",
+    "subject_type_id", "result_type_id",   # FK-поля хранят целые ID
 }
 
 FLOAT_F = {
@@ -75,7 +81,9 @@ def get_classifiers(conn):
     - список правовых форм,
     - список районов,
     - список источников обращений,
-    - список сотрудников (для назначения ответственных).
+    - список сотрудников (для назначения ответственных),
+    - справочник предметов обращения (subject_types),
+    - справочник итогов работы (result_types).
     """
     lf  = [r['value'] for r in conn.execute(
         "SELECT value FROM classifiers WHERE category='legal_form' "
@@ -94,7 +102,15 @@ def get_classifiers(conn):
         "WHERE role IN ('employee','admin') "
         "ORDER BY full_name"
     ).fetchall()
-    return lf, di, src, emp
+    # МинЭК: предметы обращений
+    subjects = conn.execute(
+        "SELECT id, name FROM subject_types ORDER BY id"
+    ).fetchall()
+    # МинЭК: итоги работы
+    results = conn.execute(
+        "SELECT id, name, color_hex FROM result_types ORDER BY id"
+    ).fetchall()
+    return lf, di, src, emp, subjects, results
 
 
 def build_values(form):
