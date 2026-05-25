@@ -275,11 +275,15 @@ def import_upload():
         if r['org_name'] and r['org_name'].strip().lower() not in known_orgs
     ))
 
+    # Флаг «обновлять дубли» передаём из формы в сессию
+    update_duplicates = request.form.get('update_duplicates') == '1'
+
     # Сохраняем в сессию
     token = _save_import_session({
         'rows': rows,
         'parse_errors': errors,
         'unknown_orgs': unknown_orgs,
+        'update_duplicates': update_duplicates,
     })
     session['import_token'] = token
 
@@ -370,7 +374,8 @@ def import_confirm_get():
         rows_count=len(data['rows']),
         parse_errors=data.get('parse_errors', []),
         preview_mode=True,
-        rows_preview=data['rows'][:10],  # показываем первые 10 строк
+        rows_preview=data['rows'][:10],
+        update_duplicates=data.get('update_duplicates', False),
     )
 
 
@@ -387,12 +392,14 @@ def import_confirm_post():
 
     rows = data['rows']
     org_mapping = data.get('org_mapping', {})
+    update_duplicates = data.get('update_duplicates', False)
 
     conn = get_db()
     known_orgs = {r['name'].strip().lower(): r['id']
                   for r in conn.execute('SELECT id, name FROM phonebook_orgs').fetchall()}
 
     created = 0
+    updated = 0
     skipped = 0
     orgs_created = 0
 
@@ -412,7 +419,7 @@ def import_confirm_post():
                 # Привязываем оригинальное имя к существующей org
                 known_orgs[orig_name.strip().lower()] = info['map_id']
 
-        # 2. Вставляем контакты
+        # 2. Вставляем или обновляем контакты
         for r in rows:
             org_name = r['org_name'].strip()
             org_key = org_name.lower()
@@ -424,12 +431,37 @@ def import_confirm_post():
                 org_id = known_orgs.get(org_key)
 
             # Проверка дубликатов по ФИО + org_id
-            exists = conn.execute(
+            existing = conn.execute(
                 'SELECT id FROM phonebook WHERE full_name=? AND org_id IS ?',
                 (r['full_name'], org_id)
             ).fetchone()
-            if exists:
-                skipped += 1
+
+            if existing:
+                if update_duplicates:
+                    # Обновляем все поля кроме ФИО и org_id
+                    conn.execute("""
+                        UPDATE phonebook SET
+                            position      = ?,
+                            room          = ?,
+                            phone_work    = ?,
+                            phone_ext     = ?,
+                            phone_personal= ?,
+                            email         = ?,
+                            notes         = ?
+                        WHERE id = ?
+                    """, (
+                        r['position'],
+                        r['room'],
+                        r['phone_work'],
+                        r['phone_ext'],
+                        r['phone_personal'],
+                        r['email'],
+                        r['notes'],
+                        existing['id'],
+                    ))
+                    updated += 1
+                else:
+                    skipped += 1
                 continue
 
             conn.execute("""
@@ -450,9 +482,17 @@ def import_confirm_post():
             ))
             created += 1
 
+        # Формируем сообщение для лога
+        log_parts = [f'добавлено {created} контактов']
+        if updated:
+            log_parts.append(f'обновлено {updated}')
+        if skipped:
+            log_parts.append(f'пропущено {skipped} дублей')
+        if orgs_created:
+            log_parts.append(f'создано {orgs_created} орг.')
+
         log_action(conn, session['user_id'], 'create', None,
-                   f'Импорт справочника: добавлено {created} контактов, '
-                   f'пропущено {skipped} дублей, создано {orgs_created} орг.')
+                   f'Импорт справочника: {", ".join(log_parts)}')
         conn.commit()
 
     except Exception as e:
@@ -467,12 +507,16 @@ def import_confirm_post():
     _delete_import_session(token)
     session.pop('import_token', None)
 
-    flash(
-        f'Импорт завершён: добавлено {created} контактов'
-        + (f', пропущено {skipped} дублей' if skipped else '')
-        + (f', создано {orgs_created} новых организаций' if orgs_created else ''),
-        'success'
-    )
+    # Формируем flash-сообщение
+    msg_parts = [f'добавлено {created} контактов']
+    if updated:
+        msg_parts.append(f'обновлено {updated}')
+    if skipped:
+        msg_parts.append(f'пропущено {skipped} дублей')
+    if orgs_created:
+        msg_parts.append(f'создано {orgs_created} новых организаций')
+
+    flash(f'Импорт завершён: {", ".join(msg_parts)}', 'success')
     return redirect(url_for('phonebook.phonebook'))
 
 
