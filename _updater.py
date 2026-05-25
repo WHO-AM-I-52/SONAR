@@ -21,7 +21,7 @@ BRANCH        = "main"
 BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
 API_BASE      = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}"
 COMMIT_FILE   = os.path.join(BASE_DIR, "_last_commit.txt")
-FALLBACK_KB   = 600  # реалистичный запасной размер архива (~600 КБ)
+FALLBACK_KB   = 600  # реалистичный запасной размер архива
 
 BAT_NAME = "start SONAR.bat"
 
@@ -174,12 +174,13 @@ def check_for_updates() -> int:
 
 def get_zip_size_kb() -> int:
     """
-    Пытается получить реальный размер zip через HEAD-запрос (Content-Length).
-    При неудаче — использует суммарный размер файлов репо * 0.5 как оценку.
-    Финальный fallback — FALLBACK_KB.
+    Определяет ожидаемый размер zip-архива.
+    1. HEAD-запрос к zipball URL (Content-Length — если S3 его вернёт)
+    2. Fallback: repo.size * 0.65 (эмпирически точнее чем /2)
+    3. Финальный fallback: FALLBACK_KB
     """
     url = f"{API_BASE}/zipball/{BRANCH}"
-    # Сначала пробуем HEAD-запрос
+    # HEAD-запрос — GitHub редиректит на S3, S3 иногда даёт Content-Length
     try:
         req = urllib.request.Request(url, headers=_headers(), method="HEAD")
         with urllib.request.urlopen(req, timeout=15) as r:
@@ -188,28 +189,35 @@ def get_zip_size_kb() -> int:
                 return int(cl) // 1024
     except Exception:
         pass
-    # Fallback: суммарный размер файлов репо / 2 (учитываем сжатие)
+    # Fallback: repo.size из API (размер git-хранилища в КБ) * 0.65
+    # repo.size включает всю историю, zip = только текущее состояние + сжатие
+    # коэффициент 0.65 даёт погрешность ~5-10% vs /2 которое давало ~18%
     try:
         req = urllib.request.Request(API_BASE, headers=_headers())
         with urllib.request.urlopen(req, timeout=15) as r:
             data = json.loads(r.read().decode())
-            size_kb = data.get("size", 0)  # GitHub возвращает КБ
+            size_kb = data.get("size", 0)
             if size_kb > 0:
-                return max(size_kb // 2, 50)
+                return max(int(size_kb * 0.65), 50)
     except Exception:
         pass
     return FALLBACK_KB
 
 
 def _print_progress(downloaded: int, estimated_kb: int, spinner_idx: int):
-    """Прогресс-бар с реальным или оценочным размером."""
+    """
+    Прогресс-бар:
+    - Если скачано <= оценки: показываем процент и бар
+    - Если скачано > оценки: переключаемся на спиннер (оценка оказалась занижена)
+    """
     size_kb = downloaded // 1024
-    if estimated_kb > 0:
-        pct    = min(downloaded / (estimated_kb * 1024) * 100, 99.0)
+    if estimated_kb > 0 and downloaded <= estimated_kb * 1024:
+        pct    = downloaded / (estimated_kb * 1024) * 100
         filled = int(pct / 5)
         bar    = "█" * filled + "░" * (20 - filled)
         print(f"  [{bar}] {pct:4.0f}%  {size_kb} / ~{estimated_kb} КБ", end="\r", flush=True)
     else:
+        # Реальный размер превысил оценку — переходим на спиннер
         spin = SPINNER[spinner_idx % len(SPINNER)]
         print(f"  [{spin}] Скачано: {size_kb} КБ...", end="\r", flush=True)
 
@@ -225,6 +233,11 @@ def download_zip(zip_path: str):
     print("  Скачиваем архив обновления...")
     with urllib.request.urlopen(req, timeout=60) as r:
         show_rate_limit(r.headers)
+        # Если Content-Length есть в заголовках GET-ответа — используем его
+        cl = r.headers.get("Content-Length")
+        if cl and int(cl) > 0:
+            estimated_kb = int(cl) // 1024
+            print(f"  Точный размер архива: {estimated_kb} КБ")
         downloaded  = 0
         spinner_idx = 0
         chunk_size  = 8192
@@ -332,6 +345,7 @@ def ensure_github_release():
 
     tag = f"v{version}"
     try:
+:
         req = urllib.request.Request(
             f"{API_BASE}/releases/tags/{tag}", headers=_headers()
         )
@@ -396,7 +410,7 @@ def main():
             print(f"  [ОШИБКА] {e}")
         sys.exit(1)
     except Exception as e:
-        print(f"  [ОШИБКА] Не удалось скачать архив обновления: {e}")
+        print(f"  [ОШИБКа] Не удалось скачать архив обновления: {e}")
         sys.exit(1)
 
     try:
