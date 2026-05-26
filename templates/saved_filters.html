@@ -28,7 +28,6 @@
         </div>
         <hr class="my-2">
         <p class="text-muted small mb-2">Условия фильтра:</p>
-
         <div class="row g-2">
           <div class="col-6">
             <label class="form-label mb-0" style="font-size:12px">Статус</label>
@@ -119,7 +118,6 @@
             <input type="number" step="0.1" name="f_inv_max" class="form-control form-control-sm" placeholder="∞">
           </div>
         </div>
-
         <button type="submit" class="btn w-100 mt-3" style="background:#1B5E7B;color:#fff">
           <i class="bi bi-bookmark-plus"></i> Сохранить фильтр
         </button>
@@ -135,7 +133,7 @@
     </div>
     <div class="card-body p-0">
 
-      {# ── ПИНОВАННАЯ КАРТОЧКА МИНЭК ── #}
+      {# ── КАРТОЧКА МинЭК ── #}
       <div class="border-bottom p-3" style="background:#f0fff4">
         <div class="d-flex justify-content-between align-items-start">
           <div>
@@ -158,6 +156,13 @@
                title="Скачать Excel за текущую неделю">
               <i class="bi bi-file-earmark-excel"></i> Excel
             </a>
+            {% if session.get('role') == 'admin' %}
+            <button class="btn btn-sm btn-outline-secondary py-0 px-2"
+                    onclick="openMinekSettings()"
+                    title="Настройка итогов работы">
+              <i class="bi bi-gear"></i> Настройка
+            </button>
+            {% endif %}
           </div>
         </div>
       </div>
@@ -239,7 +244,55 @@
 </div>
 </div>
 
-<!-- Модал редактирования -->
+{# ══════════════════════════════════════════════════════
+   МОДАЛ: Настройка итогов работы МинЭК
+   Виден только администратору (кнопка скрыта для других)
+══════════════════════════════════════════════════════ #}
+<div class="modal fade" id="minekSettingsModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header" style="background:#1B5E7B;color:#fff">
+        <h5 class="modal-title">
+          <i class="bi bi-gear me-1"></i>Настройка МинЭК — итоги работы
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small mb-3">
+          Здесь можно переименовать итог и изменить цвет строки в выгрузке МинЭК.
+          Добавить или удалить варианты — в разделе
+          <a href="{{ url_for('admin.classifiers') }}#tab-result" target="_blank">Справочники → Итоги работы</a>.
+        </p>
+
+        {# Спиннер загрузки #}
+        <div id="minekSettingsLoading" class="text-center py-4">
+          <div class="spinner-border text-secondary" role="status"></div>
+        </div>
+
+        {# Таблица итогов (заполняется через JS) #}
+        <table class="table table-sm table-bordered align-middle d-none" id="minekResultTable">
+          <thead style="background:#f8f9fa">
+            <tr>
+              <th style="width:36px">Цвет</th>
+              <th>Название итога</th>
+              <th style="width:140px">HEX-код</th>
+              <th style="width:80px">Действия</th>
+            </tr>
+          </thead>
+          <tbody id="minekResultBody"></tbody>
+        </table>
+
+        {# Сообщение об ошибке #}
+        <div id="minekSettingsError" class="alert alert-danger d-none"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Модал редактирования фильтра -->
 <div class="modal fade" id="editModal" tabindex="-1">
   <div class="modal-dialog modal-lg"><div class="modal-content">
     <form method="post" id="editForm" action="{{ url_for('admin.saved_filters') }}">
@@ -344,8 +397,10 @@
   </div></div>
 </div>
 {% endblock %}
+
 {% block scripts %}
 <script>
+// ── Редактирование обычного фильтра ─────────────────────────────────────
 function openEdit(id, p){
   document.getElementById('edit_fid').value = id;
   document.getElementById('edit_name').value = p.name || '';
@@ -364,6 +419,166 @@ function openEdit(id, p){
   document.getElementById('edit_inv_min').value = p.inv_min || '';
   document.getElementById('edit_inv_max').value = p.inv_max || '';
   new bootstrap.Modal(document.getElementById('editModal')).show();
+}
+
+// ── Настройка МинЭК: открыть модал и загрузить список ───────────────────
+const INLINE_URL = '/admin/result-types/inline';
+
+function openMinekSettings() {
+  const modal = new bootstrap.Modal(document.getElementById('minekSettingsModal'));
+  modal.show();
+  loadResultTypes();
+}
+
+function loadResultTypes() {
+  document.getElementById('minekSettingsLoading').classList.remove('d-none');
+  document.getElementById('minekResultTable').classList.add('d-none');
+  document.getElementById('minekSettingsError').classList.add('d-none');
+
+  fetch(INLINE_URL)
+    .then(r => r.json())
+    .then(data => {
+      renderResultTypes(data);
+      document.getElementById('minekSettingsLoading').classList.add('d-none');
+      document.getElementById('minekResultTable').classList.remove('d-none');
+    })
+    .catch(() => {
+      document.getElementById('minekSettingsLoading').classList.add('d-none');
+      showMinekError('Не удалось загрузить список итогов');
+    });
+}
+
+function renderResultTypes(items) {
+  const tbody = document.getElementById('minekResultBody');
+  tbody.innerHTML = '';
+  items.forEach(item => {
+    const hex = '#' + item.color_hex;
+    const tr = document.createElement('tr');
+    tr.id = 'rt-row-' + item.id;
+    tr.innerHTML = `
+      <td>
+        <div style="width:28px;height:28px;border-radius:4px;border:1px solid #ccc;
+                    background:${hex}" title="${hex}"></div>
+      </td>
+      <td>
+        <span class="rt-name" id="rt-name-${item.id}">${escHtml(item.name)}</span>
+        <input class="form-control form-control-sm d-none rt-name-input"
+               id="rt-name-input-${item.id}" value="${escHtml(item.name)}">
+      </td>
+      <td>
+        <div class="d-flex align-items-center gap-2">
+          <input type="color" class="form-control form-control-color p-0"
+                 style="width:32px;height:28px;cursor:pointer"
+                 id="rt-color-${item.id}"
+                 value="${hex}"
+                 title="Выбрать цвет">
+          <code style="font-size:11px" id="rt-colorcode-${item.id}">${hex}</code>
+        </div>
+      </td>
+      <td>
+        <div class="d-flex gap-1">
+          <button class="btn btn-sm btn-outline-secondary py-0 px-1"
+                  onclick="startRename(${item.id})" title="Переименовать" id="rt-btn-rename-${item.id}">
+            <i class="bi bi-pencil"></i>
+          </button>
+          <button class="btn btn-sm btn-success py-0 px-1 d-none"
+                  onclick="saveRename(${item.id})" title="Сохранить" id="rt-btn-save-${item.id}">
+            <i class="bi bi-check-lg"></i>
+          </button>
+          <button class="btn btn-sm btn-outline-danger py-0 px-1 d-none"
+                  onclick="cancelRename(${item.id})" title="Отмена" id="rt-btn-cancel-${item.id}">
+            <i class="bi bi-x-lg"></i>
+          </button>
+          <button class="btn btn-sm btn-outline-primary py-0 px-1"
+                  onclick="saveColor(${item.id})" title="Сохранить цвет">
+            <i class="bi bi-palette"></i>
+          </button>
+        </div>
+      </td>
+    `;
+    tbody.appendChild(tr);
+
+    // live-обновление кода цвета при выборе
+    document.getElementById('rt-color-' + item.id).addEventListener('input', function() {
+      document.getElementById('rt-colorcode-' + item.id).textContent = this.value.toUpperCase();
+      // обновляем превью кружок
+      const swatch = tr.querySelector('td:first-child div');
+      swatch.style.background = this.value;
+      swatch.title = this.value.toUpperCase();
+    });
+  });
+}
+
+function startRename(id) {
+  document.getElementById('rt-name-' + id).classList.add('d-none');
+  document.getElementById('rt-name-input-' + id).classList.remove('d-none');
+  document.getElementById('rt-btn-rename-' + id).classList.add('d-none');
+  document.getElementById('rt-btn-save-' + id).classList.remove('d-none');
+  document.getElementById('rt-btn-cancel-' + id).classList.remove('d-none');
+  document.getElementById('rt-name-input-' + id).focus();
+}
+
+function cancelRename(id) {
+  const orig = document.getElementById('rt-name-' + id).textContent;
+  document.getElementById('rt-name-input-' + id).value = orig;
+  document.getElementById('rt-name-' + id).classList.remove('d-none');
+  document.getElementById('rt-name-input-' + id).classList.add('d-none');
+  document.getElementById('rt-btn-rename-' + id).classList.remove('d-none');
+  document.getElementById('rt-btn-save-' + id).classList.add('d-none');
+  document.getElementById('rt-btn-cancel-' + id).classList.add('d-none');
+}
+
+function saveRename(id) {
+  const name = document.getElementById('rt-name-input-' + id).value.trim();
+  if (!name) return;
+  inlineRequest({ action: 'rename', id, name })
+    .then(item => {
+      document.getElementById('rt-name-' + id).textContent = item.name;
+      document.getElementById('rt-name-input-' + id).value = item.name;
+      cancelRename(id);
+      flashRow(id, 'success');
+    })
+    .catch(err => showMinekError(err));
+}
+
+function saveColor(id) {
+  const color_hex = document.getElementById('rt-color-' + id).value.replace('#', '').toUpperCase();
+  inlineRequest({ action: 'edit_color', id, color_hex })
+    .then(item => {
+      flashRow(id, 'success');
+    })
+    .catch(err => showMinekError(err));
+}
+
+function inlineRequest(payload) {
+  return fetch(INLINE_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.error) throw data.error;
+    return data.item;
+  });
+}
+
+function flashRow(id, type) {
+  const row = document.getElementById('rt-row-' + id);
+  if (!row) return;
+  row.style.transition = 'background .2s';
+  row.style.background = type === 'success' ? '#d1fae5' : '#fee2e2';
+  setTimeout(() => { row.style.background = ''; }, 1200);
+}
+
+function showMinekError(msg) {
+  const el = document.getElementById('minekSettingsError');
+  el.textContent = msg;
+  el.classList.remove('d-none');
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 </script>
 {% endblock %}

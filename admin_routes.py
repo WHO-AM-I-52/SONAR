@@ -1,7 +1,6 @@
 # ╔══════════════════════════════════════════════════════════════╗
 # ║                      admin_routes.py                         ║
-# ║  v2.1: гибкие права, журнал входов,             ║
-# ║        справочники МинЭК (subject_types, result_types)  ║
+# ║  v2.2: + inline AJAX для result_types из карточки МинЭК     ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, jsonify
@@ -64,13 +63,8 @@ def classifiers():
     row = conn.execute("SELECT value FROM settings WHERE key='okved_last_sync'").fetchone()
     okved_last_sync = row['value'] if row else '—'
 
-    # Справочники МинЭК
-    subject_types = conn.execute(
-        "SELECT * FROM subject_types ORDER BY id"
-    ).fetchall()
-    result_types = conn.execute(
-        "SELECT * FROM result_types ORDER BY id"
-    ).fetchall()
+    subject_types = conn.execute("SELECT * FROM subject_types ORDER BY id").fetchall()
+    result_types  = conn.execute("SELECT * FROM result_types  ORDER BY id").fetchall()
 
     conn.close()
     return render_template(
@@ -111,7 +105,6 @@ def subject_types_write():
 
     elif action == 'delete':
         sid = request.form.get('sid')
-        # проверяем, что нет ссылок
         used = conn.execute(
             "SELECT COUNT(*) FROM requests WHERE subject_type_id=?", (sid,)
         ).fetchone()[0]
@@ -126,7 +119,7 @@ def subject_types_write():
     return redirect(url_for('admin.classifiers') + '#tab-subject')
 
 
-# ─── СПРАВОЧНИК «ИТОГИ РАБОТЫ» ─────────────────────────────────────────────
+# ─── СПРАВОЧНИК «ИТОГИ РАБОТЫ» (форма, редирект на classifiers) ───────────
 
 @admin_bp.route('/admin/result-types', methods=['POST'])
 @login_required
@@ -175,6 +168,64 @@ def result_types_write():
 
     conn.close()
     return redirect(url_for('admin.classifiers') + '#tab-result')
+
+
+# ─── AJAX: итоги работы — для модала в saved_filters ─────────────────────
+#
+#  GET  /admin/result-types/inline       → JSON список всех итогов
+#  POST /admin/result-types/inline       → действие (edit_color / rename)
+#                                          → JSON {ok, item} или {error}
+
+@admin_bp.route('/admin/result-types/inline', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def result_types_inline():
+    conn = get_db()
+
+    if request.method == 'GET':
+        rows = conn.execute(
+            "SELECT id, name, color_hex FROM result_types ORDER BY id"
+        ).fetchall()
+        conn.close()
+        return jsonify([dict(r) for r in rows])
+
+    # POST
+    data   = request.get_json(silent=True) or {}
+    action = data.get('action')
+    rid    = data.get('id')
+
+    if action == 'rename':
+        name = (data.get('name') or '').strip()
+        if not name:
+            conn.close()
+            return jsonify({'error': 'Название не может быть пустым'}), 400
+        try:
+            conn.execute("UPDATE result_types SET name=? WHERE id=?", (name, rid))
+            conn.commit()
+        except Exception:
+            conn.close()
+            return jsonify({'error': 'Такое название уже существует'}), 409
+        row = conn.execute(
+            "SELECT id, name, color_hex FROM result_types WHERE id=?", (rid,)
+        ).fetchone()
+        conn.close()
+        return jsonify({'ok': True, 'item': dict(row)})
+
+    if action == 'edit_color':
+        color = (data.get('color_hex') or 'FFFFFF').strip().lstrip('#').upper()
+        if len(color) not in (6, 8):
+            conn.close()
+            return jsonify({'error': 'Некорректный цвет'}), 400
+        conn.execute("UPDATE result_types SET color_hex=? WHERE id=?", (color, rid))
+        conn.commit()
+        row = conn.execute(
+            "SELECT id, name, color_hex FROM result_types WHERE id=?", (rid,)
+        ).fetchone()
+        conn.close()
+        return jsonify({'ok': True, 'item': dict(row)})
+
+    conn.close()
+    return jsonify({'error': 'Неизвестное действие'}), 400
 
 
 # ─── УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ ───────────────────────────────────────────
