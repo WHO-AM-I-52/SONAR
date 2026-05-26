@@ -44,7 +44,6 @@ def fetch_releases():
     )
     changelog = []
     for r in data:
-        # Пропускаем draft-релизы и релизы без даты публикации
         published_at = r.get("published_at")
         if not published_at:
             continue
@@ -143,7 +142,7 @@ def write_changelog(changelog, roadmap):
         f.writelines(lines)
 
 def main():
-    print("  Sinhronizaciya changelog s GitHub...")
+    print("  Синхронизация changelog с GitHub...")
     if TOKEN:
         print("  Токен найден — лимит 5000 запросов/час")
     else:
@@ -165,7 +164,7 @@ def main():
         write_changelog(releases, roadmap)
         print("  changelog.py обновлён.")
     except Exception as e:
-        print(f"  [OSHIBKA] {e}")
+        print(f"  [ОШИБКА] {e}")
 
 if __name__ == "__main__":
     main()
