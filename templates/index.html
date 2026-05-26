@@ -152,54 +152,6 @@
     <i class="bi bi-file-earmark-excel me-1"></i>Выгрузить Excel
   </a>
 
-  {# ── Еженедельная выгрузка МинЭК ── #}
-  <div class="btn-group" role="group">
-    <a href="{{ url_for('report.report_minek') }}"
-       class="btn btn-sm"
-       style="background:#1B5E7B;color:#fff;border-color:#1B5E7B"
-       title="Еженедельная выгрузка для МинЭК (текущая неделя)">
-      <i class="bi bi-file-earmark-spreadsheet me-1"></i>МинЭК — неделя
-    </a>
-    {# Развернуть для выбора дат #}
-    <button type="button"
-            class="btn btn-sm dropdown-toggle dropdown-toggle-split"
-            style="background:#155a70;color:#fff;border-color:#1B5E7B"
-            data-bs-toggle="dropdown" aria-expanded="false"
-            title="Выбрать период">
-      <span class="visually-hidden">Выбрать период</span>
-    </button>
-    <ul class="dropdown-menu">
-      <li>
-        <a class="dropdown-item" style="font-size:13px"
-           href="{{ url_for('report.report_minek',
-                    date_from=filters.get('date_from',''),
-                    date_to=filters.get('date_to',''),
-                    status=filters.get('status','')) }}">
-          <i class="bi bi-funnel me-1 text-muted"></i>По текущим фильтрам
-        </a>
-      </li>
-      <li><hr class="dropdown-divider"></li>
-      <li>
-        <span class="dropdown-item-text text-muted" style="font-size:11px">Выбрать период вручную:</span>
-      </li>
-      <li>
-        <div class="px-3 py-1 d-flex gap-1 align-items-end" id="minekDatePicker">
-          <div>
-            <label style="font-size:11px;display:block">С</label>
-            <input type="date" id="minekFrom" class="form-control form-control-sm" style="width:140px">
-          </div>
-          <div>
-            <label style="font-size:11px;display:block">По</label>
-            <input type="date" id="minekTo" class="form-control form-control-sm" style="width:140px">
-          </div>
-          <button type="button" class="btn btn-sm btn-primary" onclick="goMinekCustom()">
-            <i class="bi bi-download"></i>
-          </button>
-        </div>
-      </li>
-    </ul>
-  </div>
-
   <a href="{{ url_for('requests.dashboard') }}" class="btn btn-sm btn-outline-primary">
     <i class="bi bi-bar-chart-line"></i> Открыть дашборд
   </a>
@@ -406,20 +358,5 @@
   });
 
 })();
-
-// ===== МИНЭК: ВЫГРУЗКА С ПОЛЬЗОВАТЕЛЬСКИМИ ДАТАМИ =====
-function goMinekCustom() {
-  var df = document.getElementById('minekFrom').value;
-  var dt = document.getElementById('minekTo').value;
-  if (!df && !dt) {
-    alert('Укажите хотя бы одну дату');
-    return;
-  }
-  var url = '{{ url_for("report.report_minek") }}';
-  var params = [];
-  if (df) params.push('date_from=' + encodeURIComponent(df));
-  if (dt) params.push('date_to='   + encodeURIComponent(dt));
-  window.location.href = url + (params.length ? '?' + params.join('&') : '');
-}
 </script>
 {% endblock %}

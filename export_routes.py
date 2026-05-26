@@ -1,6 +1,6 @@
 # ╔══════════════════════════════════════════════════════════════╗
 # ║                       export_routes.py                       ║
-# ║  v2.4: логирование выгрузок в журнале действий               ║
+# ║  v2.5: даты ДД.ММ.ГГГГ, исправлен цвет строк, логирование     ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 from flask import Blueprint, request, send_file, jsonify, session
@@ -17,7 +17,7 @@ from activity_log import log_action
 report_bp = Blueprint('report', __name__)
 
 
-# ─── ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ─────────────────────────────────────────────────
+# ─── ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ───────────────────────────────────────────────
 
 def _short_fio(full_name: str) -> str:
     if not full_name:
@@ -36,23 +36,29 @@ def _std_border(color='CCCCCC'):
 
 
 def _hex_to_argb(hex_color: str) -> str:
-    c = hex_color.lstrip('#').upper()
+    """'#RRGGBB', 'RRGGBB', '#AARRGGBB' → 'FFRRGGBB' (ARGB без #)."""
+    c = hex_color.lstrip('#').upper() if hex_color else ''
     if len(c) == 6:
         return 'FF' + c
     if len(c) == 8:
         return c
-    return 'FFFFFFFF'
+    return ''   # пустая — значит не красить
 
 
-def _fmt_date(iso: str) -> str:
+def _fmt_date(iso) -> str:
+    """Преобразует 'YYYY-MM-DD' или datetime → 'ДД.ММ.ГГГГ'."""
+    if not iso:
+        return '—'
+    if isinstance(iso, (date, datetime)):
+        return iso.strftime('%d.%m.%Y')
+    s = str(iso).strip()[:10]
     try:
-        return datetime.strptime(iso, '%Y-%m-%d').strftime('%d.%m.%Y')
+        return datetime.strptime(s, '%Y-%m-%d').strftime('%d.%m.%Y')
     except Exception:
-        return iso or '—'
+        return s or '—'
 
 
 def _mln_to_mld(val) -> str:
-    """Млн руб. → млрд руб. (делим на 1000)."""
     if val is None or val == '':
         return '—'
     try:
@@ -73,7 +79,7 @@ def _contact_cell(person: str, phone: str, email: str) -> str:
     return '\n'.join(parts) if parts else '—'
 
 
-# ─── СТАНДАРТНАЯ ВЫГРУЗКА ─────────────────────────────────────────────────────
+# ─── СТАНДАРТНАЯ ВЫГРУЗКА ───────────────────────────────────────────────────
 
 @report_bp.route('/report')
 @login_required
@@ -115,7 +121,7 @@ def report():
     br    = _std_border()
 
     ws.merge_cells('A1:Q1')
-    per = f" за период {df}–{dt}" if (df or dt) else ""
+    per = f" за период {_fmt_date(df)}–{_fmt_date(dt)}" if (df or dt) else ""
     ws['A1'].value     = f"Обращения на подбор земельных участков{per}"
     ws['A1'].font      = Font(bold=True, size=13, color="1B5E7B")
     ws['A1'].alignment = Alignment(horizontal='center')
@@ -145,7 +151,7 @@ def report():
         fill = alt if ri % 2 == 0 else PatternFill("solid", fgColor="FFFFFF")
         vals = [
             r['request_number'] or '—',
-            r['request_date'] or '—',
+            _fmt_date(r['request_date']),
             sm.get(r['status'], r['status']),
             r['source_type'] or '—',
             r['applicant_short_name'] or r['applicant_full_name'] or '—',
@@ -160,7 +166,7 @@ def report():
             r['site_right'] or '—',
             r['preferred_districts'] or '—',
             r['assigned_name'] or r['employee_name'] or '—',
-            r['answer_date'] or '—',
+            _fmt_date(r['answer_date']),
         ]
         for ci, val in enumerate(vals, 1):
             c = ws.cell(row=ri, column=ci, value=val)
@@ -178,10 +184,10 @@ def report():
     fp = os.path.join(REPORTS_DIR, fn)
     wb.save(fp)
 
-    # ── Журнал действий ──────────────────────────────────────────────────────
+    # ── Журнал ──
     log_parts = []
     if df or dt:
-        log_parts.append(f"период: {df or '...'} – {dt or '...'}")
+        log_parts.append(f"период: {_fmt_date(df)} – {_fmt_date(dt)}")
     if sf:
         log_parts.append(f"статус: {sm.get(sf, sf)}")
     log_parts.append(f"всего {len(rows)} обращ.")
@@ -288,22 +294,25 @@ def report_minek():
     ws.row_dimensions[3].height = 40
 
     for ri, r in enumerate(rows, 4):
-        base_fill = alt if ri % 2 == 0 else PatternFill('solid', fgColor='FFFFFF')
-        row_color = r['result_color'] if r['result_color'] else None
-        rfill = PatternFill('solid', fgColor=_hex_to_argb(row_color)) if row_color else base_fill
+        # Цвет строки: result_color хранится как 'RRGGBB' (без #)
+        argb = _hex_to_argb(r['result_color']) if r['result_color'] else ''
+        if argb:
+            rfill = PatternFill('solid', fgColor=argb)
+        else:
+            rfill = alt if ri % 2 == 0 else PatternFill('solid', fgColor='FFFFFFFF')
 
         result_val = r['additional_info'] or r['result_type_name'] or '—'
 
         vals = [
             ri - 3,
-            r['request_date'] or '—',
+            _fmt_date(r['request_date']),
             r['applicant_short_name'] or r['applicant_full_name'] or '—',
             r['project_name'] or '—',
             _mln_to_mld(r['investment_total']),
             r['jobs_total'] or '—',
             r['subject_type_name'] or '—',
-            r['answer_date'] or '—',
-            r['feedback_date'] or '—',
+            _fmt_date(r['answer_date']),
+            _fmt_date(r['feedback_date']),
             result_val,
             _short_fio(r['assigned_name'] or r['employee_name']),
             _contact_cell(
@@ -330,8 +339,8 @@ def report_minek():
 
     ws.freeze_panes = 'B4'
 
+    # ── Лист 2: справочник ──
     wl = wb.create_sheet(title='Справочник')
-
     wl.merge_cells('A1:C1')
     wl['A1'].value     = 'Легенда цветов (итоги работы по обращению)'
     wl['A1'].font      = Font(bold=True, size=12, color=HEADER_COLOR)
@@ -348,11 +357,12 @@ def report_minek():
 
     if result_types:
         for li, rt in enumerate(result_types, 3):
-            argb = _hex_to_argb(rt['color_hex'] or 'FFFFFF')
+            argb = _hex_to_argb(rt['color_hex'] or '')
+            fill = PatternFill('solid', fgColor=argb) if argb else PatternFill('solid', fgColor='FFFFFFFF')
             ca = wl.cell(row=li, column=1, value='')
-            ca.fill = PatternFill('solid', fgColor=argb); ca.border = _std_border()
+            ca.fill = fill; ca.border = _std_border()
             cb = wl.cell(row=li, column=2, value=rt['name'])
-            cb.fill = PatternFill('solid', fgColor=argb)
+            cb.fill = fill
             cb.font = Font(bold=True, size=10); cb.border = _std_border()
             cb.alignment = Alignment(vertical='center')
             cc = wl.cell(row=li, column=3, value=rt['color_hex'])
@@ -371,7 +381,7 @@ def report_minek():
     fp = os.path.join(REPORTS_DIR, fn)
     wb.save(fp)
 
-    # ── Журнал действий ──────────────────────────────────────────────────────
+    # ── Журнал ──
     detail = f"период: {_fmt_date(df)} – {_fmt_date(dt)}; всего {len(rows)} обращ."
     try:
         log_action(conn, session['user_id'], 'export_minek', detail=detail)
