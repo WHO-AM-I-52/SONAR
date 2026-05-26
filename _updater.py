@@ -21,11 +21,10 @@ BRANCH        = "main"
 BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
 API_BASE      = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}"
 COMMIT_FILE   = os.path.join(BASE_DIR, "_last_commit.txt")
-FALLBACK_KB   = 600  # реалистичный запасной размер архива
+FALLBACK_KB   = 600
 
 BAT_NAME = "start SONAR.bat"
 
-# ─── Защищённые пути (никогда не перезаписываются) ───────────────────────────
 PROTECTED_DIRS  = {"uploads", "reports", "WPy", "Bacup", "db"}
 PROTECTED_FILES = {"_updater.py", "update.bat", ".env"}
 
@@ -102,7 +101,6 @@ def show_rate_limit(headers):
 # ─── Проверка обновлений по SHA ───────────────────────────────────────────────
 
 def get_remote_sha() -> str | None:
-    """Возвращает SHA последнего коммита в ветке BRANCH."""
     try:
         data = get_json(f"{API_BASE}/commits/{BRANCH}")
         return data.get("sha", "")
@@ -111,7 +109,6 @@ def get_remote_sha() -> str | None:
         return None
 
 def load_local_sha() -> str:
-    """Читает сохранённый SHA последнего обновления."""
     if os.path.exists(COMMIT_FILE):
         try:
             return open(COMMIT_FILE, encoding="utf-8").read().strip()
@@ -120,7 +117,6 @@ def load_local_sha() -> str:
     return ""
 
 def save_local_sha(sha: str):
-    """Сохраняет SHA после успешного обновления."""
     try:
         with open(COMMIT_FILE, "w", encoding="utf-8") as f:
             f.write(sha)
@@ -129,13 +125,6 @@ def save_local_sha(sha: str):
 
 
 def check_for_updates() -> int:
-    """
-    Режим --check: проверяет наличие обновлений.
-    Возвращает:
-      0 — обновлений нет (SHA совпадает)
-      1 — есть обновления (SHA отличается или файл не найден)
-      2 — ошибка соединения
-    """
     print()
     print("  ================================================")
     print("   SONAR - Проверка обновлений")
@@ -173,12 +162,6 @@ def check_for_updates() -> int:
 # ─── Размер архива ────────────────────────────────────────────────────────────
 
 def get_zip_size_kb() -> int:
-    """
-    Определяет ожидаемый размер zip-архива.
-    1. HEAD-запрос к zipball URL (Content-Length — если S3 его вернёт)
-    2. Fallback: repo.size * 0.65 (эмпирически точнее чем /2)
-    3. Финальный fallback: FALLBACK_KB
-    """
     url = f"{API_BASE}/zipball/{BRANCH}"
     try:
         req = urllib.request.Request(url, headers=_headers(), method="HEAD")
@@ -201,11 +184,6 @@ def get_zip_size_kb() -> int:
 
 
 def _print_progress(downloaded: int, estimated_kb: int, spinner_idx: int):
-    """
-    Прогресс-бар:
-    - Если скачано <= оценки: показываем процент и бар
-    - Если скачано > оценки: переключаемся на спиннер
-    """
     size_kb = downloaded // 1024
     if estimated_kb > 0 and downloaded <= estimated_kb * 1024:
         pct    = downloaded / (estimated_kb * 1024) * 100
@@ -218,7 +196,6 @@ def _print_progress(downloaded: int, estimated_kb: int, spinner_idx: int):
 
 
 def download_zip(zip_path: str):
-    """Скачивает весь репозиторий одним архивом с прогресс-баром."""
     print("  Определяем размер архива обновления...")
     estimated_kb = get_zip_size_kb()
     print(f"  Ожидаемый размер архива: ~{estimated_kb} КБ")
@@ -250,8 +227,9 @@ def download_zip(zip_path: str):
 
 
 def extract_and_apply(zip_path: str):
-    """Распаковывает архив во временную папку, копирует файлы в BASE_DIR."""
+    """Распаковывает архив, копирует только изменившиеся файлы."""
     updated     = 0
+    unchanged   = 0
     skipped     = 0
     bat_updated = False
 
@@ -263,7 +241,7 @@ def extract_and_apply(zip_path: str):
         entries = os.listdir(tmp_dir)
         if not entries:
             print("  [ОШИБКА] Архив пустой.")
-            return 0, 0, False
+            return 0, 0, 0, False
         repo_root = os.path.join(tmp_dir, entries[0])
 
         print("  Применяем обновления...")
@@ -286,24 +264,27 @@ def extract_and_apply(zip_path: str):
                 dest = os.path.join(BASE_DIR, rel_path)
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
 
-                if rel_path_fwd == BAT_NAME:
-                    new_content = open(src, "rb").read()
-                    old_content = b""
-                    if os.path.exists(dest):
-                        old_content = open(dest, "rb").read()
-                    if new_content != old_content:
-                        shutil.copy2(src, dest)
-                        bat_updated = True
-                        print(f"  [OK] {rel_path_fwd} (ОБНОВЛЕН)")
-                    else:
-                        print(f"  [--] {rel_path_fwd} (без изменений)")
-                else:
-                    shutil.copy2(src, dest)
-                    print(f"  [OK] {rel_path_fwd}")
+                # Сравниваем содержимое до копирования
+                new_content = open(src, "rb").read()
+                old_content = b""
+                if os.path.exists(dest):
+                    old_content = open(dest, "rb").read()
 
+                if new_content == old_content:
+                    print(f"  [--] {rel_path_fwd}")
+                    unchanged += 1
+                    continue
+
+                shutil.copy2(src, dest)
                 updated += 1
 
-    return updated, skipped, bat_updated
+                if rel_path_fwd == BAT_NAME:
+                    bat_updated = True
+                    print(f"  [OK] {rel_path_fwd} (ОБНОВЛЕН)")
+                else:
+                    print(f"  [OK] {rel_path_fwd}")
+
+    return updated, unchanged, skipped, bat_updated
 
 
 def load_changelog():
@@ -405,7 +386,7 @@ def main():
         sys.exit(1)
 
     try:
-        updated, skipped, bat_updated = extract_and_apply(zip_path)
+        updated, unchanged, skipped, bat_updated = extract_and_apply(zip_path)
     finally:
         if os.path.exists(zip_path):
             os.remove(zip_path)
@@ -416,8 +397,9 @@ def main():
         print(f"  Версия сохранена: {remote_sha[:12]}...")
 
     print()
-    print(f"  Обновлено файлов  : {updated}")
-    print(f"  Пропущено (защита): {skipped}")
+    print(f"  Обновлено файлов     : {updated}")
+    print(f"  Без изменений        : {unchanged}")
+    print(f"  Пропущено (защита)  : {skipped}")
     print()
 
     ensure_github_release()
