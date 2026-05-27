@@ -266,7 +266,6 @@
 
 {% if session.get('role') == 'admin' %}
 <script>
-  // ── Переменные вынесены в глобальный scope — onclick= работает корректно ──
   var _updPanel   = document.getElementById('updatePanel');
   var _updStatus  = document.getElementById('updateStatus');
   var _btnUpdate  = document.getElementById('btnUpdate');
@@ -320,7 +319,7 @@
     if (data.output) _updShowLog(data.output);
   }
 
-  // Глобальная — вызывается из onclick="updCheck(true)"
+  // force=true — сбрасывает и браузерный sessionStorage, и серверный кэш (?force=1)
   function updCheck(force) {
     if (force) sessionStorage.removeItem(_UPD_CACHE);
 
@@ -335,7 +334,10 @@
     _btnUpdate.classList.add('d-none');
     _updSetStatus('<span class="spin"><i class="bi bi-arrow-repeat"></i></span> Проверяем…', 'loading');
 
-    fetch('/api/update/check', {credentials: 'same-origin'})
+    // При force=true передаём ?force=1 — сервер удалит _update_available.json
+    var url = force ? '/api/update/check?force=1' : '/api/update/check';
+
+    fetch(url, {credentials: 'same-origin'})
       .then(function(r){ return r.json(); })
       .then(function(data){
         try { sessionStorage.setItem(_UPD_CACHE, JSON.stringify(data)); } catch(e){}
@@ -347,7 +349,6 @@
       .finally(function(){ _btnCheck.disabled = false; });
   }
 
-  // Глобальная — вызывается из onclick="updApply()"
   function updApply() {
     if (!confirm(
       'Применить обновление?\n\nСервер автоматически перезапустится — пользователи получат кратковременный разрыв (~5-15 сек).'
@@ -407,7 +408,6 @@
         }
       })
       .catch(function(){
-        // fetch упал — скорее всего сервер уже перезапускается
         _updSetStatus(
           '<span class="spin"><i class="bi bi-arrow-repeat"></i></span> Сервер перезапускается…',
           'progress'
@@ -420,8 +420,13 @@
       });
   }
 
-  // Автопроверка при загрузке — скрипт выполняется после DOM, DOMContentLoaded не нужен
-  updCheck();
+  // Автопроверка при загрузке — без force, берёт кэш если есть
+  updCheck(false);
+
+  // Фоновая перепроверка каждые 30 минут — только если вкладка активна
+  setInterval(function() {
+    if (!document.hidden) updCheck(true);
+  }, 30 * 60 * 1000);
 </script>
 {% endif %}
 
