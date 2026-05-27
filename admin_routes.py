@@ -331,6 +331,40 @@ def manage_users():
     )
 
 
+def _build_filter_query(p):
+    """
+    Возвращает (q, params, has_like) по словарю параметров фильтра.
+    has_like=True если фильтр содержит LIKE-условия (нельзя батчить через UNION ALL).
+    """
+    q = "SELECT COUNT(*) FROM requests r WHERE 1=1"
+    params = []
+    has_like = False
+
+    if p.get('status'):     q += " AND r.status=?";          params.append(p['status'])
+    if p.get('date_from'):  q += " AND r.request_date>=?";   params.append(p['date_from'])
+    if p.get('date_to'):    q += " AND r.request_date<=?";   params.append(p['date_to'])
+    if p.get('employee'):   q += " AND r.assigned_to=?";     params.append(p['employee'])
+    if p.get('site_type_free') == '1':     q += " AND r.site_type_free=1"
+    if p.get('site_type_existing') == '1': q += " AND r.site_type_existing=1"
+    if p.get('area_min'):   q += " AND r.site_area_ha>=?";        params.append(float(p['area_min']))
+    if p.get('area_max'):   q += " AND r.site_area_ha<=?";        params.append(float(p['area_max']))
+    if p.get('build_min'):  q += " AND r.site_build_area_m2>=?"; params.append(float(p['build_min']))
+    if p.get('build_max'):  q += " AND r.site_build_area_m2<=?"; params.append(float(p['build_max']))
+    if p.get('inv_min'):    q += " AND r.investment_total>=?";    params.append(float(p['inv_min']))
+    if p.get('inv_max'):    q += " AND r.investment_total<=?";    params.append(float(p['inv_max']))
+
+    if p.get('applicant'):
+        q += " AND (r.applicant_full_name LIKE ? OR r.applicant_short_name LIKE ?)"
+        params += [f"%{p['applicant']}%"] * 2
+        has_like = True
+    if p.get('district'):
+        q += " AND r.preferred_districts LIKE ?"
+        params.append(f"%{p['district']}%")
+        has_like = True
+
+    return q, params, has_like
+
+
 @admin_bp.route('/saved-filters', methods=['GET', 'POST'])
 @login_required
 def saved_filters():
@@ -407,37 +441,67 @@ def saved_filters():
         ).fetchall()
     ]
 
-    fwc = []
+    # ─── fix #7: заменяем N+1 запросов на UNION ALL ─────────────────────────
+    #
+    # Фильтры без LIKE → батчим в один UNION ALL запрос
+    # Фильтры с LIKE (applicant/district) → отдельный SELECT запрос (таких обычно мало)
+    #
+    # Итог: N запросов → 1 запрос (+ несколько для LIKE-фильтров)
+
+    parsed = {}  # fid -> dict params
     for row in rows:
         try:
-            p = json.loads(row['params'])
+            parsed[row['id']] = json.loads(row['params'])
         except Exception:
-            p = {}
+            parsed[row['id']] = {}
 
-        q2 = "SELECT COUNT(*) FROM requests r WHERE 1=1"
-        p2 = []
-        if p.get('status'):      q2 += " AND r.status=?"; p2.append(p['status'])
-        if p.get('date_from'):   q2 += " AND r.request_date>=?"; p2.append(p['date_from'])
-        if p.get('date_to'):     q2 += " AND r.request_date<=?"; p2.append(p['date_to'])
-        if p.get('applicant'):
-            q2 += " AND (r.applicant_full_name LIKE ? OR r.applicant_short_name LIKE ?)"
-            p2 += [f"%{p['applicant']}%"] * 2
-        if p.get('employee'):    q2 += " AND r.assigned_to=?"; p2.append(p['employee'])
-        if p.get('site_type_free') == '1':      q2 += " AND r.site_type_free=1"
-        if p.get('site_type_existing') == '1':  q2 += " AND r.site_type_existing=1"
-        if p.get('area_min'):    q2 += " AND r.site_area_ha>=?"; p2.append(float(p['area_min']))
-        if p.get('area_max'):    q2 += " AND r.site_area_ha<=?"; p2.append(float(p['area_max']))
-        if p.get('build_min'):   q2 += " AND r.site_build_area_m2>=?"; p2.append(float(p['build_min']))
-        if p.get('build_max'):   q2 += " AND r.site_build_area_m2<=?"; p2.append(float(p['build_max']))
-        if p.get('inv_min'):     q2 += " AND r.investment_total>=?"; p2.append(float(p['inv_min']))
-        if p.get('inv_max'):     q2 += " AND r.investment_total<=?"; p2.append(float(p['inv_max']))
-        if p.get('district'):    q2 += " AND r.preferred_districts LIKE ?"; p2.append(f"%{p['district']}%")
+    # Разделяем на две группы
+    batch_ids  = []  # без LIKE — батча
+    single_ids = []  # с LIKE — отдельный запрос
+    for row in rows:
+        _, _, has_like = _build_filter_query(parsed[row['id']])
+        if has_like:
+            single_ids.append(row['id'])
+        else:
+            batch_ids.append(row['id'])
 
+    counts = {}  # fid -> count
+
+    # Батч-запрос через UNION ALL
+    if batch_ids:
+        union_parts  = []
+        union_params = []
+        for fid in batch_ids:
+            q, params, _ = _build_filter_query(parsed[fid])
+            # Переписываем SELECT COUNT(*) → SELECT ? AS fid, COUNT(*)
+            q_with_fid = q.replace(
+                "SELECT COUNT(*) FROM requests r WHERE 1=1",
+                f"SELECT {fid} AS fid, COUNT(*) AS cnt FROM requests r WHERE 1=1",
+                1
+            )
+            union_parts.append(q_with_fid)
+            union_params.extend(params)
+
+        union_sql = " UNION ALL ".join(union_parts)
+        for batch_row in conn.execute(union_sql, union_params).fetchall():
+            counts[batch_row[0]] = batch_row[1]
+
+    # Отдельные запросы для LIKE-фильтров
+    for fid in single_ids:
+        q, params, _ = _build_filter_query(parsed[fid])
         try:
-            cnt = conn.execute(q2, p2).fetchone()[0]
+            counts[fid] = conn.execute(q, params).fetchone()[0]
         except Exception:
-            cnt = 0
-        fwc.append({'row': row, 'params': p, 'count': cnt, 'qs': ''})
+            counts[fid] = 0
+
+    fwc = []
+    for row in rows:
+        fwc.append({
+            'row':    row,
+            'params': parsed[row['id']],
+            'count':  counts.get(row['id'], 0),
+            'qs':     '',
+        })
 
     conn.close()
     return render_template(
