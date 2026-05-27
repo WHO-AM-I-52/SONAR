@@ -2,7 +2,7 @@
 {# ╔══════════════════════════════════════════════════════════════╗ #}
 {# ║                        base.html                            ║ #}
 {# ║  Базовый шаблон приложения "Подбор ЗУ — НО"                 ║ #}
-{# ║  v2.10: Тема «Зона» переименована в «Тёмная V2» (#9)        ║ #}
+{# ║  v2.11: Значок обновления в сайдбаре (#10)                  ║ #}
 {# ╚══════════════════════════════════════════════════════════════╝ #}
 <html lang="ru">
 <head>
@@ -92,6 +92,11 @@
     body.sb-col .sb-cat { opacity:0; }
     .sb-badge { margin-left:auto; background:#dc3545; color:#fff; font-size:10px; font-weight:700; padding:1px 6px; border-radius:10px; transition:opacity .2s; }
     body.sb-col .sb-badge { opacity:0; }
+    /* ─── Значок обновления в сайдбаре ─────────────────────────────── */
+    .sb-update-dot { margin-left:auto; width:8px; height:8px; border-radius:50%; background:#fbbf24; flex-shrink:0; transition:opacity .2s; box-shadow:0 0 0 0 rgba(251,191,36,.6); animation:updDotPulse 2s infinite; }
+    @keyframes updDotPulse { 0%{box-shadow:0 0 0 0 rgba(251,191,36,.6);} 70%{box-shadow:0 0 0 5px rgba(251,191,36,0);} 100%{box-shadow:0 0 0 0 rgba(251,191,36,0);} }
+    body.sb-col .sb-update-dot { opacity:0; }
+    body[data-theme="zone"] .sb-update-dot { background:#c8a84b; box-shadow:0 0 0 0 rgba(200,168,75,.6); }
     .page-wrap { margin-top:var(--topbar-h); margin-left:var(--sb-width); transition:margin-left .25s ease; }
     body.sb-col .page-wrap { margin-left:var(--sb-col); }
     .flash-msg { top:calc(var(--topbar-h) + 12px) !important; }
@@ -355,7 +360,13 @@
     <a href="/admin/users" class="sb-link {{ 'active' if 'users' in request.path }}"><i class="bi bi-people"></i><span class="sb-lbl">Пользователи</span></a>
     {% endif %}
     <div class="sb-sep"></div>
-    <a href="{{ url_for('misc.changelog') }}" class="sb-link {{ 'active' if request.path=='/changelog' }}"><i class="bi bi-journal-text"></i><span class="sb-lbl">Версии</span></a>
+    <a href="{{ url_for('misc.changelog') }}" class="sb-link {{ 'active' if request.path=='/changelog' }}" id="sbChangelogLink">
+      <i class="bi bi-journal-text"></i>
+      <span class="sb-lbl">Версии</span>
+      {% if session.get('role')=='admin' %}
+      <span class="sb-update-dot d-none" id="sbUpdateDot" title="Доступно обновление"></span>
+      {% endif %}
+    </a>
     <div class="sb-sep"></div>
 
     {# ─── Единая кнопка тем ──────────────────────────────────────────── #}
@@ -597,6 +608,33 @@
   });
   document.addEventListener('click',function(e){if(!document.getElementById('gsWrap').contains(e.target))hideDropdown();});
   document.addEventListener('keydown',function(e){if(e.ctrlKey&&e.shiftKey&&e.key==='F'){e.preventDefault();input.focus();input.select();}});
+})();
+</script>
+{% endif %}
+
+{# ─── Значок обновления в сайдбаре (admin only) ─────────────────────── #}
+{% if session.get('role') == 'admin' %}
+<script>
+(function(){
+  var dot = document.getElementById('sbUpdateDot');
+  if (!dot) return;
+  var CACHE_KEY = 'sonar_upd_status';
+  /* Читаем кэш из sessionStorage — он уже мог быть заполнен на странице changelog */
+  var cached = null;
+  try { cached = JSON.parse(sessionStorage.getItem(CACHE_KEY)); } catch(e){}
+  if (cached) {
+    if (cached.has_update) dot.classList.remove('d-none');
+    return; /* не делаем лишний запрос */
+  }
+  /* Кэша нет — делаем тихий запрос */
+  fetch('/api/update/check', {credentials:'same-origin', cache:'no-store'})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(data){
+      if (!data) return;
+      try { sessionStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch(e){}
+      if (data.has_update) dot.classList.remove('d-none');
+    })
+    .catch(function(){});
 })();
 </script>
 {% endif %}
