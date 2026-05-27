@@ -2,13 +2,20 @@
 # ║                      info_routes.py                          ║
 # ║  Сервисные страницы: уведомления, журнал изменений, онлайн   ║
 # ║  v2.2.0: /ping фиксирует присутствие, /api/online — счётчик  ║
+# ║  v2.3.6: /api/update/check и /api/update/apply               ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 from flask import Blueprint, render_template, session, jsonify, request as flask_request
-from db import get_db
+from db import get_db, BASE_DIR
 from auth_utils import login_required
 from changelog import CHANGELOG, ROADMAP
 from datetime import datetime
+import os
+import sys
+import subprocess
+import json
+import threading
+import signal
 
 misc_bp = Blueprint('misc', __name__)
 
@@ -111,3 +118,186 @@ def api_search():
         for r in rows
     ]
     return jsonify({'results': results})
+
+
+# ─── Обновления SONAR через GitHub ──────────────────────────────────────────
+# Маршруты доступны только администратору (role == 'admin').
+# Используют _updater.py для проверки и применения обновлений.
+# Результат проверки кэшируется в _update_available.json до следующего запуска.
+# Применение обновления выполняется в фоновом потоке; после завершения
+# создаётся _restart.flag, который перехватывает start SONAR.bat
+# и перезапускает сервер без интерактивных вопросов.
+# ────────────────────────────────────────────────────────────────────────────
+
+_FLAG_FILE   = os.path.join(BASE_DIR, '_update_available.json')
+_LOCK_FILE   = os.path.join(BASE_DIR, '_updating.lock')
+_RESTART_FLAG = os.path.join(BASE_DIR, '_restart.flag')
+_UPDATER     = os.path.join(BASE_DIR, '_updater.py')
+_COMMIT_FILE = os.path.join(BASE_DIR, '_last_commit.txt')
+
+
+def _read_local_sha() -> str:
+    if os.path.exists(_COMMIT_FILE):
+        try:
+            return open(_COMMIT_FILE, encoding='utf-8').read().strip()[:12]
+        except Exception:
+            pass
+    return ''
+
+
+@misc_bp.route('/api/update/check')
+def api_update_check():
+    """Проверяет наличие обновлений на GitHub.
+
+    Возвращает JSON:
+      status   — 0 = актуально, 1 = есть обновления, 2 = ошибка / нет сети
+      has_update — bool
+      local_sha  — первые 12 символов SHA установленной версии
+      output     — последние строки вывода _updater.py --check
+      cached     — True если результат взят из кэша, False если свежая проверка
+
+    Доступно только администратору.
+    """
+    if session.get('role') != 'admin':
+        return jsonify({'error': 'forbidden'}), 403
+
+    if not os.path.exists(_UPDATER):
+        return jsonify({'status': 2, 'error': '_updater.py not found',
+                        'has_update': False, 'local_sha': _read_local_sha()}), 200
+
+    # ── Быстрый путь: отдаём кэш ──────────────────────────────────────────
+    if os.path.exists(_FLAG_FILE):
+        try:
+            with open(_FLAG_FILE, 'r', encoding='utf-8') as f:
+                cached = json.load(f)
+            code = int(cached.get('code', 2))
+            return jsonify({
+                'status':     code,
+                'has_update': code == 1,
+                'local_sha':  _read_local_sha(),
+                'output':     cached.get('output', '')[-800:],
+                'cached':     True,
+                'checked_at': cached.get('checked_at'),
+            })
+        except Exception:
+            pass  # кэш повреждён — делаем живую проверку
+
+    # ── Медленный путь: запускаем _updater.py --check ─────────────────────
+    try:
+        result = subprocess.run(
+            [sys.executable, _UPDATER, '--check'],
+            capture_output=True, text=True, timeout=25
+        )
+        code = result.returncode
+        payload = {
+            'code':       code,
+            'checked_at': datetime.now().isoformat(),
+            'output':     result.stdout[-4000:],
+        }
+        try:
+            with open(_FLAG_FILE, 'w', encoding='utf-8') as f:
+                json.dump(payload, f, ensure_ascii=False)
+        except Exception:
+            pass
+
+        return jsonify({
+            'status':     code,
+            'has_update': code == 1,
+            'local_sha':  _read_local_sha(),
+            'output':     result.stdout[-800:],
+            'cached':     False,
+            'checked_at': payload['checked_at'],
+        })
+    except subprocess.TimeoutExpired:
+        return jsonify({'status': 2, 'error': 'timeout',
+                        'has_update': False, 'local_sha': _read_local_sha()}), 200
+    except Exception as e:
+        return jsonify({'status': 2, 'error': str(e),
+                        'has_update': False, 'local_sha': _read_local_sha()}), 200
+
+
+@misc_bp.route('/api/update/apply', methods=['POST'])
+def api_update_apply():
+    """Скачивает и применяет обновление с GitHub, затем тихо перезапускает сервер.
+
+    1. Проверяет роль — только admin.
+    2. Создаёт _updating.lock — защита от двойного запуска.
+    3. В фоновом потоке:
+       a. Запускает _updater.py (скачивает zip, применяет файлы).
+       b. Удаляет кэш проверки и lock.
+       c. Создаёт _restart.flag.
+       d. Завершает Flask-процесс через SIGTERM (Windows-совместимо: CTRL_C_EVENT).
+    4. Возвращает {'ok': True} сразу, не ожидая завершения фона.
+    Батник start SONAR.bat перехватит _restart.flag и перезапустит сервер
+    без интерактивных вопросов.
+    """
+    if session.get('role') != 'admin':
+        return jsonify({'error': 'forbidden'}), 403
+
+    if os.path.exists(_LOCK_FILE):
+        return jsonify({'error': 'already_in_progress',
+                        'message': 'Обновление уже выполняется'}), 409
+
+    if not os.path.exists(_UPDATER):
+        return jsonify({'error': '_updater.py not found'}), 500
+
+    # Создаём lock немедленно в основном потоке
+    try:
+        open(_LOCK_FILE, 'w').close()
+    except Exception:
+        pass
+
+    pid = os.getpid()
+
+    def _worker():
+        try:
+            subprocess.run([sys.executable, _UPDATER], timeout=300)
+        except Exception:
+            pass
+        finally:
+            # Всегда убираем артефакты
+            for path in (_FLAG_FILE, _LOCK_FILE):
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
+
+        # Сигнализируем батнику: нужен перезапуск
+        try:
+            open(_RESTART_FLAG, 'w').close()
+        except Exception:
+            pass
+
+        # Останавливаем Flask-процесс.
+        # На Windows SIGTERM не поддерживается — используем CTRL_C_EVENT (pid=0
+        # означает «эта группа процессов»), что корректно завершает dev-сервер.
+        try:
+            if sys.platform == 'win32':
+                import ctypes
+                ctypes.windll.kernel32.GenerateConsoleCtrlEvent(0, 0)
+            else:
+                os.kill(pid, signal.SIGTERM)
+        except Exception:
+            # Fallback: грубое завершение
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except Exception:
+                pass
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return jsonify({'ok': True,
+                    'message': 'Обновление запущено. Сервер перезапустится через ~10–30 сек.'})
+
+
+@misc_bp.route('/api/update/status')
+def api_update_status():
+    """Возвращает текущий статус процесса обновления.
+
+    Фронтенд опрашивает этот маршрут раз в 2 секунды пока идёт обновление.
+    Возвращает JSON:
+      in_progress — True пока существует _updating.lock
+    """
+    if session.get('role') != 'admin':
+        return jsonify({'error': 'forbidden'}), 403
+
+    return jsonify({'in_progress': os.path.exists(_LOCK_FILE)})
