@@ -253,14 +253,14 @@
             <h6 class="mb-0" style="color:#1B5E7B">
               <i class="bi bi-list-ul me-1"></i>Текущие значения
             </h6>
-            {# Форма bulk-delete — ВНЕ таблицы, id привязан через JS #}
             <form id="bulk-delete-form" method="post"
                   action="{{ url_for('admin.result_types_write') }}"
                   onsubmit="return confirm('Удалить выбранные итоги?')">
               <input type="hidden" name="action" value="bulk_delete">
               <input type="hidden" name="selected_ids" id="bulk-delete-ids" value="">
+              {# НЕТ атрибута disabled в HTML — управляем только через JS #}
               <button type="submit" id="bulk-delete-btn"
-                      class="btn btn-sm btn-outline-danger" disabled>
+                      class="btn btn-sm btn-outline-danger">
                 <i class="bi bi-trash"></i> Удалить выбранные
               </button>
             </form>
@@ -280,7 +280,6 @@
               </thead>
               <tbody id="result-types-tbody">
                 {% for rt in result_types %}
-                {# Нормализуем color_hex: убираем #, fallback FFFFFF, проверяем длину #}
                 {% set raw_color = rt.color_hex if rt.color_hex else 'FFFFFF' %}
                 {% set color = raw_color | replace('#','') | upper %}
                 {% set color = color if color | length == 6 else 'FFFFFF' %}
@@ -291,9 +290,7 @@
                   <td class="text-muted">{{ loop.index }}</td>
                   <td>
                     <div class="d-flex align-items-center gap-1">
-                      {# Явная цветная плашка — всегда видна #}
                       <span class="color-swatch" style="background:#{{ color }};"></span>
-                      {# Пикер цвета #}
                       <form method="post" action="{{ url_for('admin.result_types_write') }}"
                             class="m-0 p-0">
                         <input type="hidden" name="action" value="edit">
@@ -409,6 +406,7 @@
 
 <script>
 (function () {
+
   /* ── 1. Автооткрытие вкладки по URL-якорю ── */
   function openTabByHash(hash) {
     if (!hash) return;
@@ -417,53 +415,63 @@
   }
   openTabByHash(window.location.hash);
 
-  /* ── 2. Bulk-delete ──────────────────────────────────────────────
-     Используем делегирование на document — работает независимо от
-     того, видима вкладка при DOMContentLoaded или нет.
-  ────────────────────────────────────────────────────────────────── */
+  /* ── 2. Bulk-delete ─────────────────────────────────────────────── */
+
   function syncBulk() {
-    var btn       = document.getElementById('bulk-delete-btn');
-    var idsInput  = document.getElementById('bulk-delete-ids');
-    var selAll    = document.getElementById('select-all-results');
+    var btn      = document.getElementById('bulk-delete-btn');
+    var idsInput = document.getElementById('bulk-delete-ids');
+    var selAll   = document.getElementById('select-all-results');
     if (!btn || !idsInput) return;
 
     var cbs      = Array.from(document.querySelectorAll('.result-cb'));
-    var selected = cbs.filter(function(cb){ return cb.checked; });
+    var selected = cbs.filter(function (cb) { return cb.checked; });
 
-    /* активируем кнопку */
-    btn.disabled = (selected.length === 0);
+    /* ключевое: используем setAttribute/removeAttribute,
+       а не btn.disabled = bool — это надёжнее в Bootstrap 5 */
+    if (selected.length === 0) {
+      btn.setAttribute('disabled', '');
+    } else {
+      btn.removeAttribute('disabled');
+    }
 
-    /* собираем id */
-    idsInput.value = selected.map(function(cb){ return cb.value; }).join(',');
+    idsInput.value = selected.map(function (cb) { return cb.value; }).join(',');
 
-    /* подсветка строк */
-    cbs.forEach(function(cb){
+    cbs.forEach(function (cb) {
       var tr = cb.closest('tr');
       if (tr) tr.classList.toggle('result-row-selected', cb.checked);
     });
 
-    /* состояние «выбрать все» */
     if (selAll) {
       selAll.checked       = cbs.length > 0 && selected.length === cbs.length;
       selAll.indeterminate = selected.length > 0 && selected.length < cbs.length;
     }
   }
 
-  /* Делегируем change на document — событие всплывает всегда */
-  document.addEventListener('change', function(e) {
+  /* делегирование change на весь document */
+  document.addEventListener('change', function (e) {
     if (e.target.classList.contains('result-cb')) {
       syncBulk();
       return;
     }
     if (e.target.id === 'select-all-results') {
       var cbs = Array.from(document.querySelectorAll('.result-cb'));
-      cbs.forEach(function(cb){ cb.checked = e.target.checked; });
+      cbs.forEach(function (cb) { cb.checked = e.target.checked; });
       syncBulk();
     }
   });
 
-  /* Первый вызов — синхронизирует начальное состояние */
+  /* дополнительный вызов syncBulk при ПОКАЗЕ вкладки «Итоги работы» —
+     Bootstrap 5 генерирует событие show.bs.tab на ссылке вкладки */
+  var resultTabLink = document.querySelector('#classTab a[href="#tab-result"]');
+  if (resultTabLink) {
+    resultTabLink.addEventListener('shown.bs.tab', function () {
+      syncBulk();
+    });
+  }
+
+  /* начальный вызов — выставляет disabled сразу */
   syncBulk();
+
 })();
 </script>
 {% endblock %}
