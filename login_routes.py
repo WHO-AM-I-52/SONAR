@@ -1,6 +1,7 @@
 # ╔══════════════════════════════════════════════════════════════╗
 # ║                       login_routes.py                        ║
-# ║  v2.1: check_pw() + автопромпт смены пароля (политика безоп.) ║
+# ║  v2.1: check_pw() + автопромпт смены пароля (политика безоп.)  ║
+# ║  fix: session.permanent=True — сессия 15 мин бездействия    ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 from flask import (
@@ -26,7 +27,7 @@ def _log_login(conn, user_id, username, event, ip):
     conn.commit()
 
 
-# ─── ВХОД ──────────────────────────────────────────────────────────────
+# ─── ВХОД ────────────────────────────────────────────────────────
 
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
@@ -36,7 +37,6 @@ def login():
         ip = request.remote_addr or '—'
 
         conn = get_db()
-        # Ищем пользователя только по логину, пароль проверяем через check_pw()
         user = conn.execute(
             "SELECT * FROM users WHERE username=?",
             (u,)
@@ -45,8 +45,6 @@ def login():
         if user and check_pw(user['password'], p):
             must_change = bool(user['must_change_password'])
 
-            # ─── Политика безопасности: если хеш устаревший (SHA-256) ───
-            # автоматически просим пользователя обновить пароль
             if is_legacy_hash(user['password']):
                 must_change = True
                 conn.execute(
@@ -54,6 +52,9 @@ def login():
                     (user['id'],)
                 )
                 conn.commit()
+
+            # ─── Сессия постоянная: живёт 15 мин бездействия ─────────────
+            session.permanent = True
 
             session['user_id']              = user['id']
             session['username']             = user['username']
@@ -75,7 +76,6 @@ def login():
 
             return redirect(url_for('requests.index'))
 
-        # Неудачная попытка — логируем без user_id
         conn.execute(
             "INSERT INTO login_log (user_id, username, event, ip, created_at) "
             "VALUES (?,?,?,?,?)",
@@ -90,7 +90,7 @@ def login():
     return render_template('login.html')
 
 
-# ─── СМЕНА ПАРОЛЯ (обязательная при временном пароле или legacy-хеше) ───────
+# ─── СМЕНА ПАРОЛЯ (обязательная при временном пароле или legacy-хеше) ───────────
 
 @auth_bp.route('/change-password', methods=['GET', 'POST'])
 def change_password():
@@ -107,7 +107,6 @@ def change_password():
             flash('Пароли не совпадают', 'error')
         else:
             conn = get_db()
-            # Сохраняем новый пароль в формате PBKDF2
             conn.execute(
                 "UPDATE users SET password=?, must_change_password=0 WHERE id=?",
                 (hash_pw(new_pw), session['user_id'])
@@ -121,7 +120,7 @@ def change_password():
     return render_template('change_password.html')
 
 
-# ─── ВЫХОД ──────────────────────────────────────────────────────────────
+# ─── ВЫХОД ────────────────────────────────────────────────────────
 
 @auth_bp.route('/logout')
 def logout():
@@ -134,7 +133,7 @@ def logout():
     return redirect(url_for('auth.login'))
 
 
-# ─── IMPERSONATION ──────────────────────────────────────────────────────────
+# ─── IMPERSONATION ──────────────────────────────────────────────────
 
 @auth_bp.route('/impersonate/<int:user_id>')
 def impersonate(user_id):
