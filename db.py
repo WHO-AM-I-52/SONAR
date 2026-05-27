@@ -1,7 +1,7 @@
-# ╔══════════════════════════════════════════════════════════════╗
+# ╔════════════════════════════════════════════════════════════════╗
 # ║                         db.py                               ║
 # ║  Подключение к базе данных и пути к папкам приложения       ║
-# ╚══════════════════════════════════════════════════════════════╝
+# ╚════════════════════════════════════════════════════════════════╝
 
 import sqlite3
 import os
@@ -18,10 +18,10 @@ os.makedirs(UPLOADS_DIR, exist_ok=True)
 os.makedirs(REPORTS_DIR, exist_ok=True)
 
 
-# ─── МИГРАЦИЯ ───────────────────────────────────────────────────────────────────────
+# ─── МИГРАЦИЯ ───────────────────────────────────────────────────────────────────
 
 def _has_column(conn, table: str, column: str) -> bool:
-    """True если колонка уже есть в таблице."""
+    """Труе если колонка уже есть в таблице."""
     rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
     return any(r['name'] == column for r in rows)
 
@@ -81,7 +81,6 @@ def _migrate(conn):
         )
 
     # ─ Справочник «Итоги работы по обращению»
-    # Инициализируем дефолтные значения только при первом создании / пустой таблице.
     result_types_exists_before = _table_exists(conn, 'result_types')
     conn.execute("""
         CREATE TABLE IF NOT EXISTS result_types (
@@ -136,17 +135,37 @@ def _migrate(conn):
             "ALTER TABLE requests ADD COLUMN incoming_number TEXT"
         )
 
+    # ════════════════════════════════════════════════════════════════
+    # Индексы — fix #6
+    # CREATE INDEX IF NOT EXISTS безопасен: не сломает БД при повторном запуске
+    # ════════════════════════════════════════════════════════════════
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_req_status ON requests(status)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_req_created_by ON requests(created_by)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_req_assigned ON requests(assigned_to)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_req_date ON requests(request_date)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id, is_read)"
+    )
+
     conn.commit()
 
 
-# ─── ПОДКЛЮЧЕНИЕ К БД ──────────────────────────────────────────────────────────────────────
+# ─── ПОДКЛЮЧЕНИЕ К БД ────────────────────────────────────────────────────────────────
 
 def get_db():
     """
     Открывает соединение с базой данных SQLite.
     - row_factory = sqlite3.Row — обращение к полям по имени
     - WAL-режим — производительность при параллельных запросах
-    - _migrate() — автоматически добавляет новые таблицы/колонки
+    - _migrate() — автоматически добавляет новые таблицы/колонки/индексы
     """
     conn = sqlite3.connect(DB_PATH, timeout=15)
     conn.row_factory = sqlite3.Row
