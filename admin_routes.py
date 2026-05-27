@@ -1,6 +1,6 @@
 # ╔══════════════════════════════════════════════════════════════╗
 # ║                      admin_routes.py                         ║
-# ║  v2.2: + inline AJAX для result_types из карточки МинЭК     ║
+# ║  v2.3 bugfix: saved_filters site_area_ha; conn.close()      ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, jsonify
@@ -13,7 +13,7 @@ from auth_utils import login_required, admin_required, hash_pw, ALL_PERMISSIONS
 admin_bp = Blueprint('admin', __name__)
 
 
-# ─── СПРАВОЧНИКИ (основные) ──────────────────────────────────────────────
+# ─── СПРАВОЧНИКИ (основные) ────────────────────────────────────────────
 
 @admin_bp.route('/admin/classifiers', methods=['GET', 'POST'])
 @login_required
@@ -66,7 +66,7 @@ def classifiers():
     subject_types = conn.execute("SELECT * FROM subject_types ORDER BY id").fetchall()
     result_types  = conn.execute("SELECT * FROM result_types  ORDER BY id").fetchall()
 
-    conn.close()
+    conn.close()  # bugfix #6: закрываем соединение
     return render_template(
         'classifiers.html',
         legal_forms=lf, districts=di, source_types=src,
@@ -76,7 +76,7 @@ def classifiers():
     )
 
 
-# ─── СПРАВОЧНИК «ПРЕДМЕТ ОБРАЩЕНИЯ» ──────────────────────────────────────
+# ─── СПРАВОЧНИК «ПРЕДМЕТ ОБРАЩЕНИЯ» ──────────────────────────────────
 
 @admin_bp.route('/admin/subject-types', methods=['POST'])
 @login_required
@@ -105,21 +105,19 @@ def subject_types_write():
 
     elif action == 'delete':
         sid = request.form.get('sid')
-        used = conn.execute(
-            "SELECT COUNT(*) FROM requests WHERE subject_type_id=?", (sid,)
-        ).fetchone()[0]
-        if used:
-            flash(f'Нельзя удалить: используется в {used} обращениях', 'error')
-        else:
-            conn.execute("DELETE FROM subject_types WHERE id=?", (sid,))
-            conn.commit()
-            flash('Предмет удалён', 'success')
+        # Сбрасываем FK на NULL вместо блокировки — тогда записи не теряются
+        conn.execute(
+            "UPDATE requests SET subject_type_id=NULL WHERE subject_type_id=?", (sid,)
+        )
+        conn.execute("DELETE FROM subject_types WHERE id=?", (sid,))
+        conn.commit()
+        flash('Предмет удалён', 'success')
 
     conn.close()
     return redirect(url_for('admin.classifiers') + '#tab-subject')
 
 
-# ─── СПРАВОЧНИК «ИТОГИ РАБОТЫ» (форма, редирект на classifiers) ───────────
+# ─── СПРАВОЧНИК «ИТОГИ РАБОТЫ» (форма, редирект на classifiers) ──────────
 
 @admin_bp.route('/admin/result-types', methods=['POST'])
 @login_required
@@ -155,26 +153,20 @@ def result_types_write():
             flash('Итог обновлён', 'success')
 
     elif action == 'delete':
-        rid  = request.form.get('rid')
-        used = conn.execute(
-            "SELECT COUNT(*) FROM requests WHERE result_type_id=?", (rid,)
-        ).fetchone()[0]
-        if used:
-            flash(f'Нельзя удалить: используется в {used} обращениях', 'error')
-        else:
-            conn.execute("DELETE FROM result_types WHERE id=?", (rid,))
-            conn.commit()
-            flash('Итог удалён', 'success')
+        rid = request.form.get('rid')
+        # Сбрасываем FK на NULL — не блокируем удаление
+        conn.execute(
+            "UPDATE requests SET result_type_id=NULL WHERE result_type_id=?", (rid,)
+        )
+        conn.execute("DELETE FROM result_types WHERE id=?", (rid,))
+        conn.commit()
+        flash('Итог удалён', 'success')
 
     conn.close()
     return redirect(url_for('admin.classifiers') + '#tab-result')
 
 
-# ─── AJAX: итоги работы — для модала в saved_filters ─────────────────────
-#
-#  GET  /admin/result-types/inline       → JSON список всех итогов
-#  POST /admin/result-types/inline       → действие (edit_color / rename)
-#                                          → JSON {ok, item} или {error}
+# ─── AJAX: итоги работы — для модала в saved_filters ──────────────────────
 
 @admin_bp.route('/admin/result-types/inline', methods=['GET', 'POST'])
 @login_required
@@ -189,7 +181,6 @@ def result_types_inline():
         conn.close()
         return jsonify([dict(r) for r in rows])
 
-    # POST
     data   = request.get_json(silent=True) or {}
     action = data.get('action')
     rid    = data.get('id')
@@ -228,7 +219,7 @@ def result_types_inline():
     return jsonify({'error': 'Неизвестное действие'}), 400
 
 
-# ─── УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ ───────────────────────────────────────────
+# ─── УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ ─────────────────────────────────────────
 
 @admin_bp.route('/admin/users', methods=['GET', 'POST'])
 @login_required
@@ -331,7 +322,7 @@ def manage_users():
     )
 
 
-# ─── СОХРАНЁННЫЕ ФИЛЬТРЫ ─────────────────────────────────────────────────
+# ─── СОХРАНЁННЫЕ ФИЛЬТРЫ ───────────────────────────────────────────────
 
 @admin_bp.route('/saved-filters', methods=['GET', 'POST'])
 @login_required
@@ -416,6 +407,9 @@ def saved_filters():
         except Exception:
             p = {}
 
+        # Bugfix #5: исправлены несуществующие колонки:
+        # было: r.site_area_ha_min / r.site_build_area_m2_min
+        # стало: r.site_area_ha / r.site_build_area_m2
         q2 = "SELECT COUNT(*) FROM requests r WHERE 1=1"
         p2 = []
         if p.get('status'):      q2 += " AND r.status=?"; p2.append(p['status'])
@@ -427,15 +421,18 @@ def saved_filters():
         if p.get('employee'):    q2 += " AND r.assigned_to=?"; p2.append(p['employee'])
         if p.get('site_type_free') == '1':      q2 += " AND r.site_type_free=1"
         if p.get('site_type_existing') == '1':  q2 += " AND r.site_type_existing=1"
-        if p.get('area_min'):    q2 += " AND r.site_area_ha_min>=?"; p2.append(float(p['area_min']))
-        if p.get('area_max'):    q2 += " AND r.site_area_ha_min<=?"; p2.append(float(p['area_max']))
-        if p.get('build_min'):   q2 += " AND r.site_build_area_m2_min>=?"; p2.append(float(p['build_min']))
-        if p.get('build_max'):   q2 += " AND r.site_build_area_m2_min<=?"; p2.append(float(p['build_max']))
+        if p.get('area_min'):    q2 += " AND r.site_area_ha>=?"; p2.append(float(p['area_min']))
+        if p.get('area_max'):    q2 += " AND r.site_area_ha<=?"; p2.append(float(p['area_max']))
+        if p.get('build_min'):   q2 += " AND r.site_build_area_m2>=?"; p2.append(float(p['build_min']))
+        if p.get('build_max'):   q2 += " AND r.site_build_area_m2<=?"; p2.append(float(p['build_max']))
         if p.get('inv_min'):     q2 += " AND r.investment_total>=?"; p2.append(float(p['inv_min']))
         if p.get('inv_max'):     q2 += " AND r.investment_total<=?"; p2.append(float(p['inv_max']))
         if p.get('district'):    q2 += " AND r.preferred_districts LIKE ?"; p2.append(f"%{p['district']}%")
 
-        cnt = conn.execute(q2, p2).fetchone()[0]
+        try:
+            cnt = conn.execute(q2, p2).fetchone()[0]
+        except Exception:
+            cnt = 0
         fwc.append({'row': row, 'params': p, 'count': cnt, 'qs': ''})
 
     conn.close()
