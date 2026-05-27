@@ -31,16 +31,16 @@ def get_all_orgs():
 def get_all_contacts(search: str = ''):
     conn = get_db()
     if search:
-        like = f'%{search}%'
+        like = f'%{search.lower()}%'
         rows = conn.execute("""
             SELECT p.*, o.name AS org_name, o.address AS org_address
             FROM phonebook p
             LEFT JOIN phonebook_orgs o ON p.org_id = o.id
-            WHERE p.full_name LIKE ?
-               OR p.position  LIKE ?
-               OR o.name      LIKE ?
+            WHERE LOWER(p.full_name) LIKE ?
+               OR LOWER(p.position)  LIKE ?
+               OR LOWER(o.name)      LIKE ?
                OR p.phone_work LIKE ?
-               OR p.email     LIKE ?
+               OR LOWER(p.email)     LIKE ?
             ORDER BY o.name, p.full_name
         """, (like, like, like, like, like)).fetchall()
     else:
