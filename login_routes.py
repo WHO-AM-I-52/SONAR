@@ -1,6 +1,6 @@
 # ╔══════════════════════════════════════════════════════════════╗
 # ║                       login_routes.py                        ║
-# ║  v2.0: аутентификация + журнал входов + гибкие права        ║
+# ║  v2.1: check_pw() + автопромпт смены пароля (политика безоп.) ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 from flask import (
@@ -10,7 +10,7 @@ from flask import (
 from datetime import datetime
 
 from db import get_db
-from auth_utils import hash_pw, load_permissions_to_session
+from auth_utils import hash_pw, check_pw, is_legacy_hash, load_permissions_to_session
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -26,7 +26,7 @@ def _log_login(conn, user_id, username, event, ip):
     conn.commit()
 
 
-# ─── ВХОД ────────────────────────────────────────────────────────────────────
+# ─── ВХОД ──────────────────────────────────────────────────────────────
 
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
@@ -36,29 +36,41 @@ def login():
         ip = request.remote_addr or '—'
 
         conn = get_db()
+        # Ищем пользователя только по логину, пароль проверяем через check_pw()
         user = conn.execute(
-            "SELECT * FROM users WHERE username=? AND password=?",
-            (u, hash_pw(p))
+            "SELECT * FROM users WHERE username=?",
+            (u,)
         ).fetchone()
 
-        if user:
-            # Проверка: требуется ли смена пароля
+        if user and check_pw(user['password'], p):
             must_change = bool(user['must_change_password'])
 
-            session['user_id']           = user['id']
-            session['username']          = user['username']
-            session['full_name']         = user['full_name']
-            session['role']              = user['role']
+            # ─── Политика безопасности: если хеш устаревший (SHA-256) ───
+            # автоматически просим пользователя обновить пароль
+            if is_legacy_hash(user['password']):
+                must_change = True
+                conn.execute(
+                    "UPDATE users SET must_change_password=1 WHERE id=?",
+                    (user['id'],)
+                )
+                conn.commit()
+
+            session['user_id']              = user['id']
+            session['username']             = user['username']
+            session['full_name']            = user['full_name']
+            session['role']                 = user['role']
             session['must_change_password'] = must_change
 
-            # Загружаем все права в сессию
             load_permissions_to_session(user)
 
             _log_login(conn, user['id'], user['username'], 'login', ip)
             conn.close()
 
             if must_change:
-                flash('Необходимо сменить временный пароль перед продолжением', 'warning')
+                if is_legacy_hash(user['password']):
+                    flash('В связи с обновлением политики безопасности необходимо сменить пароль', 'warning')
+                else:
+                    flash('Необходимо сменить временный пароль перед продолжением', 'warning')
                 return redirect(url_for('auth.change_password'))
 
             return redirect(url_for('requests.index'))
@@ -78,7 +90,7 @@ def login():
     return render_template('login.html')
 
 
-# ─── СМЕНА ПАРОЛЯ (обязательная при временном пароле) ────────────────────────
+# ─── СМЕНА ПАРОЛЯ (обязательная при временном пароле или legacy-хеше) ───────
 
 @auth_bp.route('/change-password', methods=['GET', 'POST'])
 def change_password():
@@ -95,6 +107,7 @@ def change_password():
             flash('Пароли не совпадают', 'error')
         else:
             conn = get_db()
+            # Сохраняем новый пароль в формате PBKDF2
             conn.execute(
                 "UPDATE users SET password=?, must_change_password=0 WHERE id=?",
                 (hash_pw(new_pw), session['user_id'])
@@ -108,7 +121,7 @@ def change_password():
     return render_template('change_password.html')
 
 
-# ─── ВЫХОД ───────────────────────────────────────────────────────────────────
+# ─── ВЫХОД ──────────────────────────────────────────────────────────────
 
 @auth_bp.route('/logout')
 def logout():
@@ -121,7 +134,7 @@ def logout():
     return redirect(url_for('auth.login'))
 
 
-# ─── IMPERSONATION ───────────────────────────────────────────────────────────
+# ─── IMPERSONATION ──────────────────────────────────────────────────────────
 
 @auth_bp.route('/impersonate/<int:user_id>')
 def impersonate(user_id):
@@ -135,18 +148,15 @@ def impersonate(user_id):
     if not user:
         abort(404)
 
-    # Сохраняем исходную сессию администратора
     session['original_user_id']   = session['user_id']
     session['original_username']  = session['username']
     session['original_full_name'] = session.get('full_name', session['username'])
     session['original_role']      = session['role']
 
-    # Сохраняем права администратора
     from auth_utils import ALL_PERMISSIONS
     for key in ALL_PERMISSIONS:
         session[f'original_perm_{key}'] = session.get(f'perm_{key}', 0)
 
-    # Подменяем на выбранного пользователя
     session['user_id']   = user['id']
     session['username']  = user['username']
     session['full_name'] = user['full_name']
@@ -171,7 +181,6 @@ def impersonate_stop():
     session['role']      = session.pop('original_role')
     session.pop('is_impersonating', None)
 
-    # Восстанавливаем права администратора
     for key in ALL_PERMISSIONS:
         session[f'perm_{key}'] = session.pop(f'original_perm_{key}', 1)
 
