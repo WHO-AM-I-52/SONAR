@@ -1,18 +1,37 @@
 # ╔══════════════════════════════════════════════════════════════╗
 # ║                      auth_utils.py                           ║
-# ║  v2.0: гибкая система прав вместо жёстких ролей             ║
+# ║  v2.1: PBKDF2-HMAC-SHA256 + плавный переход с SHA-256     ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 import hashlib
 from functools import wraps
 from flask import session, redirect, url_for, flash
+from werkzeug.security import generate_password_hash, check_password_hash
 
 
 def hash_pw(p: str) -> str:
-    return hashlib.sha256(p.encode()).hexdigest()
+    """Хеширует пароль через PBKDF2-HMAC-SHA256 с солью (werkzeug)."""
+    return generate_password_hash(p)
 
 
-# ─── ПРАВА ПОЛЬЗОВАТЕЛЯ (ключи = поля в таблице users) ──────────────────────
+def check_pw(stored: str, entered: str) -> bool:
+    """
+    Проверяет пароль. Поддерживает оба формата:
+    - новый: pbkdf2:sha256:... (через werkzeug)
+    - старый: 64-символьный hex (SHA-256 без соли)
+    """
+    if stored and stored.startswith('pbkdf2:'):
+        return check_password_hash(stored, entered)
+    # Обратная совместимость: старые SHA-256 хеши продолжают работать
+    return stored == hashlib.sha256(entered.encode()).hexdigest()
+
+
+def is_legacy_hash(stored: str) -> bool:
+    """Возвращает True если хеш старый (SHA-256 без соли)."""
+    return bool(stored) and not stored.startswith('pbkdf2:')
+
+
+# ─── ПРАВА ПОЛЬЗОВАТЕЛЯ (ключи = поля в таблице users) ──────────────────
 
 ALL_PERMISSIONS = {
     'can_create':      'Создавать обращения',
@@ -23,7 +42,7 @@ ALL_PERMISSIONS = {
     'can_export':      'Экспорт в Excel',
     'can_classifiers': 'Управление справочниками',
     'can_users':       'Управление пользователями',
-    'can_view_all':    'Просмотр всех обращений',
+    'can_view_all':    'Видит все обращения (вкл. поиск)',
 }
 
 # Пресет: admin получает все права автоматически
