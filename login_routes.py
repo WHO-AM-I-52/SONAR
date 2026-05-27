@@ -1,7 +1,6 @@
 # ╔══════════════════════════════════════════════════════════════╗
 # ║                       login_routes.py                        ║
-# ║  v2.1: check_pw() + автопромпт смены пароля (политика безоп.)  ║
-# ║  fix: session.permanent=True — сессия 15 мин бездействия    ║
+# ║  v2.2: session.permanent=True (сессия 15 мин бездействия)   ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 from flask import (
@@ -21,13 +20,13 @@ def _log_login(conn, user_id, username, event, ip):
     conn.execute(
         "INSERT INTO login_log (user_id, username, event, ip, created_at) "
         "VALUES (?,?,?,?,?)",
-        (user_id, username, event,  ip,
+        (user_id, username, event, ip,
          datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
     )
     conn.commit()
 
 
-# ─── ВХОД ────────────────────────────────────────────────────────
+# ─── ВХОД ──────────────────────────────────────────────────────────────
 
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
@@ -45,6 +44,7 @@ def login():
         if user and check_pw(user['password'], p):
             must_change = bool(user['must_change_password'])
 
+            # ─── Политика безопасности: если хеш устаревший (SHA-256) ───
             if is_legacy_hash(user['password']):
                 must_change = True
                 conn.execute(
@@ -53,7 +53,9 @@ def login():
                 )
                 conn.commit()
 
-            # ─── Сессия постоянная: живёт 15 мин бездействия ─────────────
+            # ─── Сессия: permanent=True + таймаут бездействия 15 мин ───
+            # PERMANENT_SESSION_LIFETIME задан в app.py, SESSION_REFRESH_EACH_REQUEST=True
+            # — при каждом запросе таймер сбрасывается.
             session.permanent = True
 
             session['user_id']              = user['id']
@@ -76,6 +78,7 @@ def login():
 
             return redirect(url_for('requests.index'))
 
+        # Неудачная попытка — логируем без user_id
         conn.execute(
             "INSERT INTO login_log (user_id, username, event, ip, created_at) "
             "VALUES (?,?,?,?,?)",
@@ -90,7 +93,7 @@ def login():
     return render_template('login.html')
 
 
-# ─── СМЕНА ПАРОЛЯ (обязательная при временном пароле или legacy-хеше) ───────────
+# ─── СМЕНА ПАРОЛЯ ───────────────────────────────────────────────────────
 
 @auth_bp.route('/change-password', methods=['GET', 'POST'])
 def change_password():
@@ -98,89 +101,44 @@ def change_password():
         return redirect(url_for('auth.login'))
 
     if request.method == 'POST':
-        new_pw  = request.form.get('new_password', '').strip()
-        confirm = request.form.get('confirm_password', '').strip()
+        new_pw  = request.form.get('new_password', '')
+        confirm = request.form.get('confirm_password', '')
 
         if len(new_pw) < 6:
-            flash('Пароль должен содержать не менее 6 символов', 'error')
-        elif new_pw != confirm:
+            flash('Пароль должен быть не менее 6 символов', 'error')
+            return render_template('change_password.html')
+        if new_pw != confirm:
             flash('Пароли не совпадают', 'error')
-        else:
-            conn = get_db()
-            conn.execute(
-                "UPDATE users SET password=?, must_change_password=0 WHERE id=?",
-                (hash_pw(new_pw), session['user_id'])
-            )
-            conn.commit()
-            conn.close()
-            session['must_change_password'] = False
-            flash('Пароль успешно изменён', 'success')
-            return redirect(url_for('requests.index'))
+            return render_template('change_password.html')
+
+        conn = get_db()
+        conn.execute(
+            "UPDATE users SET password=?, must_change_password=0 WHERE id=?",
+            (hash_pw(new_pw), session['user_id'])
+        )
+        conn.commit()
+        conn.close()
+
+        session['must_change_password'] = False
+        flash('Пароль успешно изменён', 'success')
+        return redirect(url_for('requests.index'))
 
     return render_template('change_password.html')
 
 
-# ─── ВЫХОД ────────────────────────────────────────────────────────
+# ─── ВЫХОД ──────────────────────────────────────────────────────────────
 
 @auth_bp.route('/logout')
 def logout():
-    if 'user_id' in session:
-        conn = get_db()
-        _log_login(conn, session['user_id'], session.get('username', '—'), 'logout',
-                   request.remote_addr or '—')
-        conn.close()
+    ip = request.remote_addr or '—'
+    user_id  = session.get('user_id')
+    username = session.get('username', '—')
+    if user_id:
+        try:
+            conn = get_db()
+            _log_login(conn, user_id, username, 'logout', ip)
+            conn.close()
+        except Exception:
+            pass
     session.clear()
     return redirect(url_for('auth.login'))
-
-
-# ─── IMPERSONATION ──────────────────────────────────────────────────
-
-@auth_bp.route('/impersonate/<int:user_id>')
-def impersonate(user_id):
-    if session.get('role') != 'admin':
-        abort(403)
-
-    db = get_db()
-    user = db.execute('SELECT * FROM users WHERE id=?', (user_id,)).fetchone()
-    db.close()
-
-    if not user:
-        abort(404)
-
-    session['original_user_id']   = session['user_id']
-    session['original_username']  = session['username']
-    session['original_full_name'] = session.get('full_name', session['username'])
-    session['original_role']      = session['role']
-
-    from auth_utils import ALL_PERMISSIONS
-    for key in ALL_PERMISSIONS:
-        session[f'original_perm_{key}'] = session.get(f'perm_{key}', 0)
-
-    session['user_id']   = user['id']
-    session['username']  = user['username']
-    session['full_name'] = user['full_name']
-    session['role']      = user['role']
-    session['is_impersonating'] = True
-
-    load_permissions_to_session(user)
-
-    return redirect('/')
-
-
-@auth_bp.route('/impersonate/stop')
-def impersonate_stop():
-    if not session.get('is_impersonating'):
-        return redirect('/')
-
-    from auth_utils import ALL_PERMISSIONS
-
-    session['user_id']   = session.pop('original_user_id')
-    session['username']  = session.pop('original_username')
-    session['full_name'] = session.pop('original_full_name', session['username'])
-    session['role']      = session.pop('original_role')
-    session.pop('is_impersonating', None)
-
-    for key in ALL_PERMISSIONS:
-        session[f'perm_{key}'] = session.pop(f'original_perm_{key}', 1)
-
-    return redirect('/')
