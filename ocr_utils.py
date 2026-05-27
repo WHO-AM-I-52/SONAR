@@ -1,6 +1,6 @@
 # ╔══════════════════════════════════════════════════════════════╗
 # ║ ocr_utils.py                                                 ║
-# ║ v3.0.0 — OCR анкет для подбора площадки                      ║
+# ║ v3.0.1 — fix #12: print→logger, fix #13: lazy OCR init      ║
 # ║                                                              ║
 # ║  • PDF: текст без OCR                                       ║
 # ║  • DOCX/DOC: абзацы + ТАБЛИЦЫ (спец-парсер MTS)             ║
@@ -11,19 +11,35 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Dict, Tuple
 
 import pdfplumber
 from docx import Document
 
+logger = logging.getLogger(__name__)
+
 try:
     import easyocr
     _HAS_EASYOCR = True
-    _OCR_READER = easyocr.Reader(['ru', 'en'], gpu=False)
-except Exception:
+except ImportError:
     _HAS_EASYOCR = False
-    _OCR_READER = None
+
+# fix #13: ленивая инициализация — модель грузится только при первом OCR-запросе
+_OCR_READER = None
+
+
+def _get_ocr_reader():
+    """Возвращает easyocr.Reader, загружая модель при первом вызове."""
+    global _OCR_READER
+    if not _HAS_EASYOCR:
+        return None
+    if _OCR_READER is None:
+        logger.info("OCR: загрузка модели easyocr...")
+        _OCR_READER = easyocr.Reader(['ru', 'en'], gpu=False)
+        logger.info("OCR: модель загружена")
+    return _OCR_READER
 
 
 # ─── БАЗОВОЕ ИЗВЛЕЧЕНИЕ ТЕКСТА ───────────────────────────────────────────────
@@ -49,9 +65,10 @@ def _is_text_pdf(path: str) -> bool:
 
 
 def _extract_text_image(path: str) -> str:
-    if not _HAS_EASYOCR:
+    reader = _get_ocr_reader()
+    if reader is None:
         return ""
-    result = _OCR_READER.readtext(path, detail=0, paragraph=True)
+    result = reader.readtext(path, detail=0, paragraph=True)
     return "\n".join(result)
 
 
@@ -99,16 +116,12 @@ def _parse_docx_tables(path: str) -> Dict[str, str]:
             row = rows[i]
             joined = " | ".join(row).lower()
 
-            # Заявитель (инвестор)
             if "заявитель (инвестор" in joined:
-                # значения могут быть в соседних ячейках и следующих строках
                 value_parts = []
-                # текущая строка — всё кроме ячейки с подписью
                 for c in row:
                     if "заявитель (инвестор" not in c.lower():
                         if c.strip():
                             value_parts.append(c.strip())
-                # следующие 2 строки, пока не наткнёмся на новую подпись
                 j = i + 1
                 while j < len(rows) and "заявитель (инвестор" not in " | ".join(rows[j]).lower() \
                         and "почтовый и юридический адрес" not in " | ".join(rows[j]).lower():
@@ -122,7 +135,6 @@ def _parse_docx_tables(path: str) -> Dict[str, str]:
                 i = j
                 continue
 
-            # Почтовый и юридический адрес
             if "почтовый и юридический адрес" in joined:
                 value_parts = []
                 for c in row:
@@ -134,7 +146,6 @@ def _parse_docx_tables(path: str) -> Dict[str, str]:
                 i += 1
                 continue
 
-            # Название проекта
             if "название проекта (краткое описание" in joined or "название проекта" in joined:
                 value_parts = []
                 for c in row:
@@ -146,9 +157,7 @@ def _parse_docx_tables(path: str) -> Dict[str, str]:
                 i += 1
                 continue
 
-            # Уполномоченное лицо / ФИО / телефон / e-mail могут идти блоком
             if "уполномоченное лицо по ведению проекта" in joined:
-                # в этой строке обычно только подпись, а дальше отдельные строки
                 j = i + 1
                 while j < len(rows):
                     line = " | ".join(rows[j])
@@ -156,19 +165,15 @@ def _parse_docx_tables(path: str) -> Dict[str, str]:
                     if "планируемое количество постоянных" in low_line \
                             or "планируемый объем инвестиций" in low_line:
                         break
-                    # ФИО
                     if "ф.и.о" in low_line or "фио" in low_line:
                         val = clean_fio(line)
                         if val:
                             fields["contact_person"] = val
-                    # Телефон
                     if "тел" in low_line:
-                        # ищем после "тел" или "телефон"
                         idx = low_line.find("тел")
                         tail = line[idx + len("тел"):].strip(" :\t")
                         if tail:
                             fields["contact_phone"] = tail
-                    # Email
                     if "e-mail" in low_line or "email" in low_line:
                         idx = low_line.find("e-mail")
                         if idx == -1:
@@ -180,9 +185,7 @@ def _parse_docx_tables(path: str) -> Dict[str, str]:
                 i = j
                 continue
 
-            # Рабочие места
             if "планируемое количество постоянных рабочих мест" in joined:
-                # строка содержит и числа
                 line = " ".join(row)
                 digits = [
                     d for d in "".join(ch if ch.isdigit() else " " for ch in line).split()
@@ -195,11 +198,8 @@ def _parse_docx_tables(path: str) -> Dict[str, str]:
                 i += 1
                 continue
 
-            # Инвестиции
             if "планируемый объем инвестиций" in joined or "планируемый объём инвестиций" in joined:
-                # смотрим текущую и пару следующих строк
                 inv_lines = []
-                # текущая строка: всё кроме подписи
                 for c in row:
                     if "планируемый объем инвестиций" not in c.lower() \
                             and "планируемый объём инвестиций" not in c.lower():
@@ -212,12 +212,10 @@ def _parse_docx_tables(path: str) -> Dict[str, str]:
                     if not l:
                         j += 1
                         continue
-                    # если дошли до следующего крупного блока — стоп
                     if "описание строительства" in low_l or "планируемый срок начала строительства" in low_l:
                         break
                     inv_lines.append(l)
                     j += 1
-                # выбираем первую строку с цифрой как общий объём
                 for l in inv_lines:
                     if any(ch.isdigit() for ch in l):
                         fields["investment_total"] = l
@@ -225,7 +223,6 @@ def _parse_docx_tables(path: str) -> Dict[str, str]:
                 i = j
                 continue
 
-            # Описание строительства
             if "описание строительства" in joined:
                 value_parts = []
                 for c in row:
@@ -233,7 +230,6 @@ def _parse_docx_tables(path: str) -> Dict[str, str]:
                         if c.strip():
                             value_parts.append(c.strip())
                 j = i + 1
-                # захватываем пары следующих строк, пока не начались сроки
                 while j < len(rows):
                     l = " | ".join(rows[j]).strip()
                     if not l:
@@ -250,7 +246,6 @@ def _parse_docx_tables(path: str) -> Dict[str, str]:
                 i = j
                 continue
 
-            # Сроки
             if "планируемый срок начала строительства" in joined:
                 for c in row:
                     if "планируемый срок начала строительства" not in c.lower() and c.strip():
@@ -259,14 +254,12 @@ def _parse_docx_tables(path: str) -> Dict[str, str]:
                 continue
 
             if "планируемый срок ввода предприятия в эксплуатацию" in joined:
-                # может быть несколько строк с очередями — берём всё после подписи
                 val = " ".join([c for c in row if "планируемый срок ввода предприятия" not in c.lower()]).strip()
                 if val:
                     fields["operation_start"] = val
                 i += 1
                 continue
 
-            # Номенклатура продукции
             if "номенклатура планируемой к выпуску продукции" in joined:
                 val = " ".join([c for c in row if "номенклатура планируемой к выпуску продукции" not in c.lower()]).strip()
                 if val:
@@ -276,7 +269,6 @@ def _parse_docx_tables(path: str) -> Dict[str, str]:
 
             i += 1
 
-    # Чистим пустые
     fields = {k: v for k, v in fields.items() if v}
     return fields
 
@@ -319,7 +311,6 @@ def _parse_anketa_text_blocks(text: str) -> Dict[str, str]:
 
     fields: Dict[str, str] = {}
 
-    # 1.1 Описание производства
     prod_desc = slice_block(
         "1.1. краткое описание производства и используемых технологий",
         ["\n1.2.", "\nii.", "\n2.", "\nII "]
@@ -327,14 +318,11 @@ def _parse_anketa_text_blocks(text: str) -> Dict[str, str]:
     if prod_desc:
         fields["production_description"] = prod_desc
 
-    # 1.2 Состав объекта (если не прочли из таблицы)
     if "object_composition" not in fields:
         comp = find_after(["1.2. состав объекта:", "1.2. состав объекта"], max_len=400)
         if comp:
             fields["object_composition"] = comp
 
-    # II. Общие требования к площадке -> можно класть в site_other / engineering_extra при желании
-    # Пока просто берём дополнительные требования к инженерной инфраструктуре
     eng_extra = slice_block(
         "при необходимости укажите дополнительные требования к инженерной инфраструктуре:",
         ["\n2.", "\n2. ", "\n3.", "\n3. "]
@@ -342,7 +330,6 @@ def _parse_anketa_text_blocks(text: str) -> Dict[str, str]:
     if eng_extra:
         fields["engineering_extra"] = eng_extra
 
-    # Транспорт — 2.3 дополнительные требования
     transport_extra = slice_block(
         "2.3. при необходимости укажите дополнительные требования к транспортной инфраструктуре",
         ["\n3.", "\n3. "]
@@ -350,7 +337,6 @@ def _parse_anketa_text_blocks(text: str) -> Dict[str, str]:
     if transport_extra:
         fields["transport_extra"] = transport_extra
 
-    # Дополнительная информация (раздел 6)
     add_info = slice_block(
         "6. дополнительная информация:",
         []
@@ -373,20 +359,16 @@ def extract_anketa_fields(path: str) -> Tuple[Dict[str, str], str]:
     p: Path = Path(path)
     ext = (p.suffix or "").lower()
 
-    print("OCR DEBUG:", "path=", path, "ext=", ext)
+    logger.debug("OCR: path=%s ext=%s", path, ext)
 
     text = ""
     msg = ""
     fields: Dict[str, str] = {}
 
-    # DOCX/DOC: сначала парсим таблицы, потом текстовые блоки
     if ext in (".docx", ".doc"):
         try:
-            # Табличные реквизиты
             table_fields = _parse_docx_tables(path)
             fields.update(table_fields)
-
-            # Текст для разделов 1.1–6
             doc = Document(path)
             parts = []
             for pgh in doc.paragraphs:
@@ -414,13 +396,11 @@ def extract_anketa_fields(path: str) -> Tuple[Dict[str, str], str]:
         msg = "Файл анкеты обработан как изображение (OCR)."
 
     else:
-        # Fallback по содержимому
         try:
             if _is_text_pdf(path):
                 text = _extract_text_pdf(path)
                 msg = "Файл анкеты обработан как PDF без расширения (эвристика по содержимому)."
             else:
-                # пробуем как DOCX
                 fields.update(_parse_docx_tables(path))
                 doc = Document(path)
                 parts = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
@@ -433,7 +413,7 @@ def extract_anketa_fields(path: str) -> Tuple[Dict[str, str], str]:
             )
 
     if text and text.strip():
-        print("OCR TEXT SAMPLE:", repr(text[:500]))
+        logger.debug("OCR TEXT SAMPLE: %s", repr(text[:500]))
         block_fields = _parse_anketa_text_blocks(text)
         for k, v in block_fields.items():
             fields.setdefault(k, v)

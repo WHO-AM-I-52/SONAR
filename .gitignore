@@ -158,3 +158,19 @@ cython_debug/
 
 # Локальная portable-Python
 /WPy/
+
+# ═══════════════════════════════════════════════════════
+# SONAR: служебные и временные файлы (fix #20)
+# ═══════════════════════════════════════════════════════
+
+# Временный архив обновления (_updater.py)
+_sonar_update.zip
+
+# Файл локальной версии (_updater.py)
+_last_commit.txt
+
+# Папка бэкапов (PROTECTED_DIRS в _updater.py)
+/Bacup/
+
+# Временные файлы OCR (request_routes.py)
+_ocr_tmp_*
