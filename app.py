@@ -1,6 +1,7 @@
 # ╔══════════════════════════════════════════════════════════════╗
 # ║ app.py                                                       ║
 # ║ v2.3: pb_import_bp зарегистрирован (импорт справочника)     ║
+# ║ fix: SECRET_KEY хранится в _secret.key, сессии живут   ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 import os
@@ -15,12 +16,24 @@ from spravochnik import LEGAL_FORMS_DEFAULT, DISTRICTS_DEFAULT, SOURCE_TYPES_DEF
 
 app = Flask(__name__)
 
-# ─── SECRET_KEY: читаем из .env / переменной окружения ────────────────────────
-# Генерация одноразового ключа: python -c "import secrets; print(secrets.token_hex(32))"
-# Добавить в .env: SECRET_KEY=<сгенерированный_ключ>
-# Если ключ не задан — генерируется временный (сессии сбросятся при перезапуске).
+# ─── SECRET_KEY: читаем из .env / переменной окружения, затем из _secret.key─
+# Даже без .env ключ сохраняется между перезапусками — сессии не сбрасываются.
 import secrets as _secrets
-app.secret_key = os.environ.get('SECRET_KEY') or _secrets.token_hex(32)
+_KEY_FILE = os.path.join(BASE_DIR, '_secret.key')
+_env_key  = os.environ.get('SECRET_KEY')
+if _env_key:
+    app.secret_key = _env_key
+else:
+    if os.path.exists(_KEY_FILE):
+        app.secret_key = open(_KEY_FILE, 'r').read().strip()
+    else:
+        _new_key = _secrets.token_hex(32)
+        try:
+            with open(_KEY_FILE, 'w') as _f:
+                _f.write(_new_key)
+        except Exception:
+            pass
+        app.secret_key = _new_key
 
 # ─── Blueprints ───────────────────────────────────────────────
 from phonebook_routes import phonebook_bp
@@ -142,7 +155,7 @@ CREATE INDEX  IF NOT EXISTS idx_okved_name ON okved(name);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 """)
 
-    # ── Миграция requests ────────────────────────────────────────
+    # ── Миграция requests ─────────────────────────────────────────
     cols = [r[1] for r in conn.execute("PRAGMA table_info(requests)").fetchall()]
     for col in ['source_type', 'request_files', 'edit_reason', 'updated_by']:
         if col not in cols:
@@ -161,7 +174,7 @@ CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         if col not in cols:
             conn.execute(f"ALTER TABLE requests ADD COLUMN {col} {typ}")
 
-    # ── Миграция users (v2.0) ────────────────────────────────────
+    # ── Миграция users (v2.0) ──────────────────────────────────
     user_cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
     for col in ['can_create', 'can_edit_others', 'can_confirm', 'can_delete',
                 'can_rollback', 'can_export', 'can_classifiers', 'can_users',
@@ -171,7 +184,7 @@ CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     if 'must_change_password' not in user_cols:
         conn.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0")
 
-    # ── Миграция users (v2.2 — settings) ────────────────────────
+    # ── Миграция users (v2.2 — settings) ───────────────────────
     for col, definition in [
         ('email',               'TEXT DEFAULT NULL'),
         ('theme',               "TEXT DEFAULT 'light'"),
@@ -180,7 +193,7 @@ CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         if col not in user_cols:
             conn.execute(f"ALTER TABLE users ADD COLUMN {col} {definition}")
 
-    # ── Создание admin если нет ──────────────────────────────────
+    # ── Создание admin если нет ──────────────────────────────
     if not conn.execute("SELECT id FROM users WHERE username='admin'").fetchone():
         conn.execute(
             "INSERT INTO users (username,password,full_name,role,"
@@ -190,7 +203,7 @@ CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
             ('admin', hash_pw('admin123'), 'Администратор', 'admin')
         )
 
-    # ── Справочники ──────────────────────────────────────────────
+    # ── Справочники ──────────────────────────────────────────
     if not conn.execute("SELECT id FROM classifiers LIMIT 1").fetchone():
         for v in LEGAL_FORMS_DEFAULT:
             conn.execute("INSERT INTO classifiers (category,value) VALUES ('legal_form',?)", (v,))
@@ -215,7 +228,7 @@ def migrate_db():
     conn = sqlite3.connect(DB_PATH, timeout=15)
     conn.row_factory = sqlite3.Row
 
-    # ── requests ─────────────────────────────────────────────────
+    # ── requests ──────────────────────────────────────────────────
     cols = [r[1] for r in conn.execute("PRAGMA table_info(requests)").fetchall()]
     for col in ['request_files', 'source_type', 'edit_reason', 'updated_by']:
         if col not in cols:
@@ -231,7 +244,7 @@ def migrate_db():
         if col not in cols:
             conn.execute(f"ALTER TABLE requests ADD COLUMN {col} {typ}")
 
-    # ── users (v2.0) ─────────────────────────────────────────────
+    # ── users (v2.0) ───────────────────────────────────────────────
     user_cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
     for col in ['can_create', 'can_edit_others', 'can_confirm', 'can_delete',
                 'can_rollback', 'can_export', 'can_classifiers', 'can_users',
@@ -241,7 +254,7 @@ def migrate_db():
     if 'must_change_password' not in user_cols:
         conn.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0")
 
-    # ── users (v2.2 — settings) ───────────────────────────────────
+    # ── users (v2.2 — settings) ────────────────────────────────
     for col, definition in [
         ('email',               'TEXT DEFAULT NULL'),
         ('theme',               "TEXT DEFAULT 'light'"),
@@ -250,7 +263,7 @@ def migrate_db():
         if col not in user_cols:
             conn.execute(f"ALTER TABLE users ADD COLUMN {col} {definition}")
 
-    # ── login_log (v2.0) ─────────────────────────────────────────
+    # ── login_log (v2.0) ──────────────────────────────────────────
     conn.executescript("""
 CREATE TABLE IF NOT EXISTS login_log (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -264,7 +277,7 @@ CREATE INDEX IF NOT EXISTS idx_ll_user  ON login_log(user_id);
 CREATE INDEX IF NOT EXISTS idx_ll_event ON login_log(event);
 """)
 
-    # ── Базовые права существующим сотрудникам ───────────────────
+    # ── Базовые права существующим сотрудникам ───────────────
     conn.execute("""
         UPDATE users SET can_create=1, can_export=1, can_view_all=1
         WHERE role='employee' AND can_create=0
@@ -310,7 +323,7 @@ CREATE INDEX IF NOT EXISTS idx_pb_org  ON phonebook(org_id);
 CREATE INDEX IF NOT EXISTS idx_pb_name ON phonebook(full_name);
 """)
 
-    # ── phonebook source_type (v2.3) ─────────────────────────────
+    # ── phonebook source_type (v2.3) ──────────────────────────────
     pb_cols = [r[1] for r in conn.execute("PRAGMA table_info(phonebook)").fetchall()]
     if 'source_type' not in pb_cols:
         conn.execute(
@@ -401,9 +414,9 @@ from export_routes     import report_bp
 from info_routes       import misc_bp
 from okved_admin       import okved_bp
 from okved_api         import okved_api_bp
-from settings_routes   import settings_bp    # feat #10
-from preview_routes    import preview_bp     # feat #6 hover-popover
-from phonebook_import  import pb_import_bp   # feat: импорт справочника
+from settings_routes   import settings_bp
+from preview_routes    import preview_bp
+from phonebook_import  import pb_import_bp
 
 app.register_blueprint(okved_bp)
 app.register_blueprint(okved_api_bp)
@@ -412,9 +425,9 @@ app.register_blueprint(requests_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(report_bp)
 app.register_blueprint(misc_bp)
-app.register_blueprint(settings_bp)    # feat #10
-app.register_blueprint(preview_bp)     # feat #6 hover-popover
-app.register_blueprint(pb_import_bp)   # feat: импорт справочника
+app.register_blueprint(settings_bp)
+app.register_blueprint(preview_bp)
+app.register_blueprint(pb_import_bp)
 
 if __name__ == '__main__':
     init_db()
