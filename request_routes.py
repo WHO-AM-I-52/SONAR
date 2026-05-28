@@ -1,6 +1,6 @@
 # ╔══════════════════════════════════════════════════════════════╗
 # ║ request_routes.py                                            ║
-# ║ v2.1: поддержка новых полей МинЭК (предмет, итоги)    ║
+# ║ v2.2: фикс дублирования номеров (request_counters)          ║
 # ║ feat #19: пагинация списка обращений (PER_PAGE=25)           ║
 # ╚══════════════════════════════════════════════════════════════╝
 
@@ -15,7 +15,7 @@ import json
 import math
 
 from dashboard import build_dash
-from db import get_db, UPLOADS_DIR
+from db import get_db, UPLOADS_DIR, next_request_number
 from auth_utils import login_required, admin_required
 from form_utils import build_values, get_classifiers, ALL_FIELDS, REQUIRED_FIELDS
 from validators import allowed_file, _int, validate_inn
@@ -217,7 +217,7 @@ def new_request():
             ext = (ext or '').lower()
             tmp_name = f'_ocr_tmp_anketa{ext}'
             tmp_path = os.path.join(UPLOADS_DIR, tmp_name)
-
+            msg = ''
             try:
                 ocr_file.save(tmp_path)
                 fields, msg = extract_anketa_fields(tmp_path)
@@ -256,8 +256,7 @@ def new_request():
                     'form.html', req=None, today=date.today().isoformat(),
                     legal_forms=lf2, districts=di2, source_types=src2,
                     employees=emp2, required_fields=REQUIRED_FIELDS,
-                    subjects=subjects2, results=results2,
-                    ocr_message=msg if 'msg' in locals() else ''
+                    subjects=subjects2, results=results2, ocr_message=msg
                 )
 
         # ── Обычная ветка сохранения ───────────────────────────────
@@ -484,10 +483,8 @@ def confirm_request(rid):
 
     if action == 'accept':
         year     = datetime.now().year
-        count    = conn.execute(
-            "SELECT COUNT(*) FROM requests WHERE status!='draft'"
-        ).fetchone()[0] + 1
-        num      = f"ЗУ-{year}-{count:04d}"
+        # ── Атомарная нумерация через таблицу-счётчик (fix: дубли при удалении) ──
+        num      = next_request_number(conn, year)
         assigned = _int(request.form.get('assigned_to')) or req['assigned_to']
 
         conn.execute(
@@ -655,11 +652,9 @@ def assign_number(rid):
         flash('Номер уже присвоен или обращение не найдено', 'warning')
         return redirect(url_for('requests.view_request', rid=rid))
 
-    year  = datetime.now().year
-    count = conn.execute(
-        "SELECT COUNT(*) FROM requests WHERE request_number IS NOT NULL"
-    ).fetchone()[0] + 1
-    num   = f"ЗУ-{year}-{count:04d}"
+    year = datetime.now().year
+    # ── Атомарная нумерация через таблицу-счётчик (fix: дубли при удалении) ──
+    num  = next_request_number(conn, year)
 
     conn.execute("UPDATE requests SET request_number=? WHERE id=?", (num, rid))
     log_action(conn, session['user_id'], 'status', rid,

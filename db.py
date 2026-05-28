@@ -137,7 +137,6 @@ def _migrate(conn):
 
     # ════════════════════════════════════════════════════════════════
     # Индексы — fix #6
-    # CREATE INDEX IF NOT EXISTS безопасен: не сломает БД при повторном запуске
     # ════════════════════════════════════════════════════════════════
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_req_status ON requests(status)"
@@ -155,7 +154,78 @@ def _migrate(conn):
         "CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id, is_read)"
     )
 
+    # ════════════════════════════════════════════════════════════════
+    # fix: таблица счётчиков нумерации обращений по годам
+    # Решает баг с дублированием номеров при удалении записей.
+    # Каждый год хранит свой независимый счётчик.
+    # Миграция: при первом запуске инициализирует счётчик текущего года
+    # на основе MAX существующих номеров вида «ЗУ-YYYY-NNNN».
+    # ════════════════════════════════════════════════════════════════
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS request_counters (
+            year     INTEGER PRIMARY KEY,
+            last_seq INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+
+    # Инициализация счётчика из существующих данных (идемпотентно)
+    _init_counters_from_existing(conn)
+
     conn.commit()
+
+
+def _init_counters_from_existing(conn):
+    """
+    При первой миграции: читает существующие номера вида «ЗУ-YYYY-NNNN»
+    и восстанавливает счётчики по годам, чтобы новые номера не конфликтовали.
+    Повторный вызов безопасен: INSERT OR IGNORE не перезапишет уже заполненные строки.
+    """
+    rows = conn.execute(
+        "SELECT request_number FROM requests WHERE request_number IS NOT NULL"
+    ).fetchall()
+    year_max = {}
+    for row in rows:
+        num = row[0] or ''
+        # Формат: ЗУ-YYYY-NNNN
+        parts = num.split('-')
+        if len(parts) == 3:
+            try:
+                year = int(parts[1])
+                seq  = int(parts[2])
+                if year_max.get(year, 0) < seq:
+                    year_max[year] = seq
+            except ValueError:
+                pass
+    for year, max_seq in year_max.items():
+        # INSERT OR IGNORE: не трогает строку, если год уже есть в таблице
+        conn.execute(
+            "INSERT OR IGNORE INTO request_counters (year, last_seq) VALUES (?, ?)",
+            (year, max_seq)
+        )
+
+
+def next_request_number(conn, year: int) -> str:
+    """
+    Атомарно увеличивает счётчик для указанного года и возвращает
+    готовый номер вида «ЗУ-YYYY-NNNN».
+
+    Использует INSERT OR REPLACE + SELECT для атомарной операции в SQLite.
+    Вызывать внутри уже открытой транзакции (conn.commit() делает вызывающий код).
+    """
+    # Создаём строку года если её нет (первый номер в году)
+    conn.execute(
+        "INSERT OR IGNORE INTO request_counters (year, last_seq) VALUES (?, 0)",
+        (year,)
+    )
+    conn.execute(
+        "UPDATE request_counters SET last_seq = last_seq + 1 WHERE year = ?",
+        (year,)
+    )
+    seq = conn.execute(
+        "SELECT last_seq FROM request_counters WHERE year = ?",
+        (year,)
+    ).fetchone()[0]
+    return f"ЗУ-{year}-{seq:04d}"
 
 
 # ─── ПОДКЛЮЧЕНИЕ К БД ────────────────────────────────────────────────────────────────
