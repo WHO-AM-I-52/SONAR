@@ -1,8 +1,6 @@
 # ╔══════════════════════════════════════════════════════════════╗
 # ║ app.py                                                       ║
-# ║ v2.3: pb_import_bp зарегистрирован (импорт справочника)     ║
-# ║ fix: SECRET_KEY хранится в _secret.key, сессии живут   ║
-# ║ fix: сессия permanent, таймаут 15 мин бездействия      ║
+# ║ v2.4: investmap_bp зарегистрирован (конвертер инвестплощадок)║
 # ╚══════════════════════════════════════════════════════════════╝
 
 import os
@@ -426,6 +424,7 @@ from okved_api         import okved_api_bp
 from settings_routes   import settings_bp
 from preview_routes    import preview_bp
 from phonebook_import  import pb_import_bp
+from investmap_routes  import investmap_bp
 
 app.register_blueprint(okved_bp)
 app.register_blueprint(okved_api_bp)
@@ -437,6 +436,7 @@ app.register_blueprint(misc_bp)
 app.register_blueprint(settings_bp)
 app.register_blueprint(preview_bp)
 app.register_blueprint(pb_import_bp)
+app.register_blueprint(investmap_bp)
 
 if __name__ == '__main__':
     init_db()
