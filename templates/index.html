@@ -248,12 +248,61 @@
   </table>
 </div>
 
-<div class="mt-1 d-flex align-items-center gap-3">
+{# ===== ФУТЕР: счётчик + пагинация ===== #}
+<div class="mt-2 d-flex align-items-center flex-wrap gap-3">
+
+  {# Легенда просроченных #}
   <div class="small text-muted">
     <span class="badge bg-danger me-1"> </span>
     Красные строки — активные обращения старше {{dash.kpi.norm_days}} дней без ответа
   </div>
-  <div class="small text-muted ms-auto">Всего записей: <strong>{{ requests|length }}</strong></div>
+
+  {# Счётчик записей #}
+  <div class="small text-muted ms-auto">
+    Показано <strong>{{ requests|length }}</strong> из <strong>{{ total_filtered }}</strong>
+    {% if total_filtered != total_all %}(всего в базе: {{ total_all }}){% endif %}
+  </div>
+
+  {# Пагинация #}
+  {% if total_pages > 1 %}
+  {% set qs_base = [] %}
+  {% for k,v in filters.items() %}{% if v %}{% set _ = qs_base.append(k ~ '=' ~ v) %}{% endif %}{% endfor %}
+  {% if active_filter_id %}{% set _ = qs_base.append('active_filter=' ~ active_filter_id) %}{% endif %}
+  {% set qs = qs_base | join('&') %}
+
+  <nav aria-label="Страницы обращений">
+    <ul class="pagination pagination-sm mb-0">
+
+      {# Назад #}
+      <li class="page-item {{ 'disabled' if page <= 1 }}">
+        <a class="page-link" href="?{{ qs }}&page={{ page - 1 }}" aria-label="Назад">
+          <i class="bi bi-chevron-left"></i>
+        </a>
+      </li>
+
+      {# Страницы: первая, окно вокруг текущей, последняя #}
+      {% for p in range(1, total_pages + 1) %}
+        {% if p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+          {% if loop.changed(p > 1 and p < total_pages and (p < page - 2 or p > page + 2)) %}
+          <li class="page-item disabled"><span class="page-link">…</span></li>
+          {% endif %}
+          <li class="page-item {{ 'active' if p == page }}">
+            <a class="page-link" href="?{{ qs }}&page={{ p }}">{{ p }}</a>
+          </li>
+        {% endif %}
+      {% endfor %}
+
+      {# Вперёд #}
+      <li class="page-item {{ 'disabled' if page >= total_pages }}">
+        <a class="page-link" href="?{{ qs }}&page={{ page + 1 }}" aria-label="Вперёд">
+          <i class="bi bi-chevron-right"></i>
+        </a>
+      </li>
+
+    </ul>
+  </nav>
+  {% endif %}
+
 </div>
 
 <script src="{{ url_for('static', filename='js/filter_chips.js') }}"></script>

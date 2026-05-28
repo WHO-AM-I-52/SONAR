@@ -1,6 +1,7 @@
 # ╔══════════════════════════════════════════════════════════════╗
 # ║ request_routes.py                                            ║
 # ║ v2.1: поддержка новых полей МинЭК (предмет, итоги)    ║
+# ║ feat #19: пагинация списка обращений (PER_PAGE=25)           ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 from flask import (
@@ -11,6 +12,7 @@ from datetime import datetime, date
 from werkzeug.utils import secure_filename
 import os
 import json
+import math
 
 from dashboard import build_dash
 from db import get_db, UPLOADS_DIR
@@ -22,6 +24,8 @@ from activity_log import log_action
 from ocr_utils import extract_anketa_fields
 
 requests_bp = Blueprint('requests', __name__)
+
+PER_PAGE = 25
 
 
 # ─── ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ──────────────────────────────────────────────
@@ -72,7 +76,6 @@ def _build_filter(sf, df, dt, af, ef, src_f, search, quick, user_id, for_count=F
     elif quick == 'unassigned':
         where += " AND (r.assigned_to IS NULL OR r.assigned_to=0)"
     elif quick == 'favorites':
-        # favorite_flag вычисляется только в основном SELECT, не в COUNT(*)
         if for_count:
             where += " AND f.id IS NOT NULL"
         else:
@@ -96,24 +99,12 @@ def index():
     src_f  = request.args.get('source', '')
     search = request.args.get('search', '').strip()
     quick  = request.args.get('quick', '')
+    page   = max(1, _int(request.args.get('page', '1')) or 1)
 
     conn = get_db()
     dash = build_dash(conn, period)
 
     uid = session['user_id']
-
-    # ─── Основной запрос: список обращений ────────────────────────────
-    where, params = _build_filter(sf, df, dt, af, ef, src_f, search, quick, uid, for_count=False)
-    q = (
-        "SELECT r.*, u.full_name AS employee_name, "
-        "ass.full_name AS assigned_name, "
-        "CASE WHEN f.id IS NULL THEN 0 ELSE 1 END AS favorite_flag "
-        "FROM requests r "
-        "LEFT JOIN users u   ON r.created_by  = u.id "
-        "LEFT JOIN users ass ON r.assigned_to = ass.id "
-        "LEFT JOIN favorites f ON f.request_id = r.id AND f.user_id = ? "
-        f"{where} ORDER BY r.id DESC"
-    )
 
     total_all = conn.execute("SELECT COUNT(*) FROM requests").fetchone()[0]
 
@@ -126,9 +117,26 @@ def index():
         "LEFT JOIN favorites f ON f.request_id = r.id AND f.user_id = ? "
         f"{count_where}"
     )
-
     total_filtered = conn.execute(count_q, count_params).fetchone()[0]
-    reqs = conn.execute(q, params).fetchall()
+
+    # ─── Пагинация ────────────────────────────────────────────────────
+    total_pages = max(1, math.ceil(total_filtered / PER_PAGE))
+    page        = min(page, total_pages)
+    offset      = (page - 1) * PER_PAGE
+
+    # ─── Основной запрос: список обращений с LIMIT/OFFSET ─────────────
+    where, params = _build_filter(sf, df, dt, af, ef, src_f, search, quick, uid, for_count=False)
+    q = (
+        "SELECT r.*, u.full_name AS employee_name, "
+        "ass.full_name AS assigned_name, "
+        "CASE WHEN f.id IS NULL THEN 0 ELSE 1 END AS favorite_flag "
+        "FROM requests r "
+        "LEFT JOIN users u   ON r.created_by  = u.id "
+        "LEFT JOIN users ass ON r.assigned_to = ass.id "
+        "LEFT JOIN favorites f ON f.request_id = r.id AND f.user_id = ? "
+        f"{where} ORDER BY r.id DESC LIMIT ? OFFSET ?"
+    )
+    reqs = conn.execute(q, params + [PER_PAGE, offset]).fetchall()
 
     employees = conn.execute(
         "SELECT id,full_name FROM users WHERE role IN ('employee','admin','manager') "
@@ -160,6 +168,7 @@ def index():
         source_types=src_types, dash=dash, today_str=today.isoformat(),
         saved_filter_list=saved_filter_list, active_filter_id=active_filter_id,
         total_all=total_all, total_filtered=total_filtered, active_quick=quick,
+        page=page, total_pages=total_pages, per_page=PER_PAGE,
     )
 
 
@@ -190,7 +199,7 @@ def new_request():
         if action == 'ocr':
             ocr_file = request.files.get('ocr_form')
             if not ocr_file or not ocr_file.filename:
-                flash('\u041d\u0435 \u0432\u044b\u0431\u0440\u0430\u043d \u0444\u0430\u0439\u043b \u0430\u043d\u043a\u0435\u0442\u044b \u0434\u043b\u044f OCR.', 'warning')
+                flash('Не выбран файл анкеты для OCR.', 'warning')
                 conn.close()
                 conn2 = get_db()
                 lf2, di2, src2, emp2, subjects2, results2 = get_classifiers(conn2)
@@ -229,8 +238,8 @@ def new_request():
                     if k in fake_req:
                         fake_req[k] = v
                 flash(
-                    '\u0410\u043d\u043a\u0435\u0442\u0430 \u0440\u0430\u0441\u043f\u043e\u0437\u043d\u0430\u043d\u0430: \u0447\u0430\u0441\u0442\u044c \u043f\u043e\u043b\u0435\u0439 \u0437\u0430\u043f\u043e\u043b\u043d\u0435\u043d\u0430 \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438. '
-                    '\u041f\u0440\u043e\u0432\u0435\u0440\u044c\u0442\u0435 \u043f\u0435\u0440\u0435\u0434 \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u0435\u043c.', 'success'
+                    'Анкета распознана: часть полей заполнена автоматически. '
+                    'Проверьте перед сохранением.', 'success'
                 )
                 return render_template(
                     'form.html', req=fake_req, today=date.today().isoformat(),
@@ -240,8 +249,8 @@ def new_request():
                 )
             else:
                 flash(
-                    '\u042f \u0435\u0449\u0451 \u043d\u0435 \u0441\u043b\u0438\u0448\u043a\u043e\u043c \u0443\u043c\u043d\u044b\u0439 \u0438 \u043d\u0435 \u0441\u043c\u043e\u0433 \u0441\u043e\u043f\u043e\u0441\u0442\u0430\u0432\u0438\u0442\u044c \u0434\u0430\u043d\u043d\u044b\u0435 \u0430\u043d\u043a\u0435\u0442\u044b. '
-                    '\u0417\u0430\u043f\u043e\u043b\u043d\u0438\u0442\u0435 \u043f\u043e\u043b\u044f \u0432\u0440\u0443\u0447\u043d\u0443\u044e.', 'warning'
+                    'Я ещё не слишком умный и не смог сопоставить данные анкеты. '
+                    'Заполните поля вручную.', 'warning'
                 )
                 return render_template(
                     'form.html', req=None, today=date.today().isoformat(),
@@ -255,11 +264,11 @@ def new_request():
         inn = request.form.get('applicant_inn', '').strip()
         ok_inn, inn_reason = validate_inn(inn)
         if inn_reason == 'format':
-            flash('\u0418\u041d\u041d \u0434\u043e\u043b\u0436\u0435\u043d \u0441\u043e\u0434\u0435\u0440\u0436\u0430\u0442\u044c \u0442\u043e\u043b\u044c\u043a\u043e \u0446\u0438\u0444\u0440\u044b.', 'warning')
+            flash('ИНН должен содержать только цифры.', 'warning')
         elif inn_reason == 'length':
-            flash('\u0414\u043b\u0438\u043d\u0430 \u0418\u041d\u041d \u0434\u043e\u043b\u0436\u043d\u0430 \u0431\u044b\u0442\u044c 10 \u0446\u0438\u0444\u0440 (\u044e\u0440\u043b\u0438\u0446\u0430) \u0438\u043b\u0438 12 \u0446\u0438\u0444\u0440 (\u0418\u041f).', 'warning')
+            flash('Длина ИНН должна быть 10 цифр (юрлица) или 12 цифр (ИП).', 'warning')
         elif inn_reason == 'checksum':
-            flash('\u0418\u041d\u041d \u0443\u043a\u0430\u0437\u0430\u043d \u0441 \u043e\u0448\u0438\u0431\u043a\u043e\u0439. \u041a\u043e\u043d\u0442\u0440\u043e\u043b\u044c\u043d\u0430\u044f \u0441\u0443\u043c\u043c\u0430 \u043d\u0435 \u0441\u043e\u0432\u043f\u0430\u0434\u0430\u0435\u0442.', 'warning')
+            flash('ИНН указан с ошибкой. Контрольная сумма не совпадает.', 'warning')
 
         vals = build_values(request.form)
 
@@ -286,10 +295,10 @@ def new_request():
             f'ID:{new_id}'
         )
         log_action(conn, session['user_id'], 'create', new_id,
-                   f'\u0421\u043e\u0437\u0434\u0430\u043d\u043e \u043e\u0431\u0440\u0430\u0449\u0435\u043d\u0438\u0435: {applicant}')
+                   f'Создано обращение: {applicant}')
         conn.commit()
         conn.close()
-        flash('\u041e\u0431\u0440\u0430\u0449\u0435\u043d\u0438\u0435 \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u043e', 'success')
+        flash('Обращение сохранено', 'success')
         return redirect(url_for('requests.index'))
 
     # ── GET: чистая форма ─────────────────────────────────────────────────────
@@ -312,7 +321,7 @@ def edit_request(rid):
     req  = conn.execute("SELECT * FROM requests WHERE id=?", (rid,)).fetchone()
     if not req:
         conn.close()
-        flash('\u041d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u043e', 'error')
+        flash('Не найдено', 'error')
         return redirect(url_for('requests.index'))
 
     old_req = dict(req)
@@ -323,11 +332,11 @@ def edit_request(rid):
         inn = request.form.get('applicant_inn', '').strip()
         ok_inn, inn_reason = validate_inn(inn)
         if inn_reason == 'format':
-            flash('\u0418\u041d\u041d \u0434\u043e\u043b\u0436\u0435\u043d \u0441\u043e\u0434\u0435\u0440\u0436\u0430\u0442\u044c \u0442\u043e\u043b\u044c\u043a\u043e \u0446\u0438\u0444\u0440\u044b.', 'warning')
+            flash('ИНН должен содержать только цифры.', 'warning')
         elif inn_reason == 'length':
-            flash('\u0414\u043b\u0438\u043d\u0430 \u0418\u041d\u041d \u0434\u043e\u043b\u0436\u043d\u0430 \u0431\u044b\u0442\u044c 10 \u0446\u0438\u0444\u0440 (\u044e\u0440\u043b\u0438\u0446\u0430) \u0438\u043b\u0438 12 \u0446\u0438\u0444\u0440 (\u0418\u041f).', 'warning')
+            flash('Длина ИНН должна быть 10 цифр (юрлица) или 12 цифр (ИП).', 'warning')
         elif inn_reason == 'checksum':
-            flash('\u0418\u041d\u041d \u0443\u043a\u0430\u0437\u0430\u043d \u0441 \u043e\u0448\u0438\u0431\u043a\u043e\u0439. \u041a\u043e\u043d\u0442\u0440\u043e\u043b\u044c\u043d\u0430\u044f \u0441\u0443\u043c\u043c\u0430 \u043d\u0435 \u0441\u043e\u0432\u043f\u0430\u0434\u0430\u0435\u0442.', 'warning')
+            flash('ИНН указан с ошибкой. Контрольная сумма не совпадает.', 'warning')
 
         vals = build_values(request.form)
 
@@ -362,12 +371,12 @@ def edit_request(rid):
         save_history(conn, rid, session['user_id'], old_req, new_req)
 
         num = req['request_number'] or f'ID:{rid}'
-        reason_str = f' | \u041f\u0440\u0438\u0447\u0438\u043d\u0430: {edit_reason}' if edit_reason else ''
+        reason_str = f' | Причина: {edit_reason}' if edit_reason else ''
         log_action(conn, session['user_id'], 'edit', rid,
-                   f'\u041e\u0431\u0440\u0430\u0449\u0435\u043d\u0438\u0435 {num}{reason_str}')
+                   f'Обращение {num}{reason_str}')
         conn.commit()
         conn.close()
-        flash('\u041e\u0431\u0440\u0430\u0449\u0435\u043d\u0438\u0435 \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u043e', 'success')
+        flash('Обращение обновлено', 'success')
         return redirect(url_for('requests.index'))
 
     lf, di, src, emp, subjects, results = get_classifiers(conn)
@@ -401,7 +410,7 @@ def view_request(rid):
     ).fetchone()
     if not req:
         conn.close()
-        flash('\u041d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u043e', 'error')
+        flash('Не найдено', 'error')
         return redirect(url_for('requests.index'))
 
     okved_name = None
@@ -431,7 +440,7 @@ def request_history_view(rid):
     req  = conn.execute("SELECT * FROM requests WHERE id=?", (rid,)).fetchone()
     conn.close()
     if not req:
-        flash('\u041d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u043e', 'error')
+        flash('Не найдено', 'error')
         return redirect(url_for('requests.index'))
     history = get_history(rid)
     return render_template('history.html', history=history, req=req, rid=rid)
@@ -447,11 +456,11 @@ def rollback_request(rid, hid):
     ok   = rollback_history(hid, rid)
     if ok:
         log_action(conn, session['user_id'], 'rollback', rid,
-                   f'\u041e\u0442\u043a\u0430\u0442 \u043a \u0432\u0435\u0440\u0441\u0438\u0438 history_id={hid}')
+                   f'Откат к версии history_id={hid}')
         conn.commit()
-        flash('\u041e\u0431\u0440\u0430\u0449\u0435\u043d\u0438\u0435 \u043e\u0442\u043a\u0430\u0447\u0435\u043d\u043e \u043a \u0432\u044b\u0431\u0440\u0430\u043d\u043d\u043e\u0439 \u0432\u0435\u0440\u0441\u0438\u0438', 'success')
+        flash('Обращение откачено к выбранной версии', 'success')
     else:
-        flash('\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0432\u044b\u043f\u043e\u043b\u043d\u0438\u0442\u044c \u043e\u0442\u043a\u0430\u0442 — \u0437\u0430\u043f\u0438\u0441\u044c \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u0430', 'error')
+        flash('Не удалось выполнить откат — запись не найдена', 'error')
     conn.close()
     return redirect(url_for('requests.view_request', rid=rid))
 
@@ -466,7 +475,7 @@ def confirm_request(rid):
     req     = conn.execute("SELECT * FROM requests WHERE id=?", (rid,)).fetchone()
     if not req:
         conn.close()
-        flash('\u041d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u043e', 'error')
+        flash('Не найдено', 'error')
         return redirect(url_for('requests.index'))
 
     action  = request.form.get('action')
@@ -478,7 +487,7 @@ def confirm_request(rid):
         count    = conn.execute(
             "SELECT COUNT(*) FROM requests WHERE status!='draft'"
         ).fetchone()[0] + 1
-        num      = f"\u0417\u0423-{year}-{count:04d}"
+        num      = f"ЗУ-{year}-{count:04d}"
         assigned = _int(request.form.get('assigned_to')) or req['assigned_to']
 
         conn.execute(
@@ -489,18 +498,18 @@ def confirm_request(rid):
         conn.execute(
             "INSERT INTO notifications (user_id,message,link) VALUES (?,?,?)",
             (req['created_by'],
-             f'\u041e\u0431\u0440\u0430\u0449\u0435\u043d\u0438\u0435 \u043f\u0440\u0438\u043d\u044f\u0442\u043e \u0432 \u0440\u0430\u0431\u043e\u0442\u0443. \u041d\u043e\u043c\u0435\u0440: {num}', f'/view/{rid}')
+             f'Обращение принято в работу. Номер: {num}', f'/view/{rid}')
         )
         if assigned:
             conn.execute(
                 "INSERT INTO notifications (user_id,message,link) VALUES (?,?,?)",
                 (assigned,
-                 f'\u0412\u0430\u043c \u043d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u043e \u043d\u043e\u0432\u043e\u0435 \u043e\u0431\u0440\u0430\u0449\u0435\u043d\u0438\u0435. \u041d\u043e\u043c\u0435\u0440: {num}', f'/view/{rid}')
+                 f'Вам назначено новое обращение. Номер: {num}', f'/view/{rid}')
             )
         log_action(conn, session['user_id'], 'accept', rid,
-                   f'\u041f\u0440\u0438\u043d\u044f\u0442\u043e \u0432 \u0440\u0430\u0431\u043e\u0442\u0443, \u043d\u043e\u043c\u0435\u0440: {num}, \u043e\u0442\u0432\u0435\u0442\u0441\u0442\u0432\u0435\u043d\u043d\u044b\u0439 ID={assigned}')
+                   f'Принято в работу, номер: {num}, ответственный ID={assigned}')
         conn.commit()
-        flash(f'\u041f\u0440\u0438\u043d\u044f\u0442\u043e \u0432 \u0440\u0430\u0431\u043e\u0442\u0443, \u043d\u043e\u043c\u0435\u0440: {num}', 'success')
+        flash(f'Принято в работу, номер: {num}', 'success')
 
     elif action == 'reject':
         conn.execute(
@@ -510,13 +519,13 @@ def confirm_request(rid):
         conn.execute(
             "INSERT INTO notifications (user_id,message,link) VALUES (?,?,?)",
             (req['created_by'],
-             f'\u041e\u0431\u0440\u0430\u0449\u0435\u043d\u0438\u0435 \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0435\u043d\u043e \u043d\u0430 \u0434\u043e\u0440\u0430\u0431\u043e\u0442\u043a\u0443. \u041a\u043e\u043c\u043c\u0435\u043d\u0442\u0430\u0440\u0438\u0439: {comment}',
+             f'Обращение возвращено на доработку. Комментарий: {comment}',
              f'/view/{rid}')
         )
         log_action(conn, session['user_id'], 'reject', rid,
-                   f'\u0412\u043e\u0437\u0432\u0440\u0430\u0442 \u043d\u0430 \u0434\u043e\u0440\u0430\u0431\u043e\u0442\u043a\u0443. \u041a\u043e\u043c\u043c\u0435\u043d\u0442\u0430\u0440\u0438\u0439: {comment}')
+                   f'Возврат на доработку. Комментарий: {comment}')
         conn.commit()
-        flash('\u0412\u043e\u0437\u0432\u0440\u0430\u0449\u0435\u043d\u043e \u043d\u0430 \u0434\u043e\u0440\u0430\u0431\u043e\u0442\u043a\u0443', 'warning')
+        flash('Возвращено на доработку', 'warning')
 
     conn.close()
     return redirect(url_for('requests.view_request', rid=rid))
@@ -552,10 +561,10 @@ def answer_request(rid):
         (date.today().isoformat(), method, m_other, notes, af, answer_sys_num, now, rid)
     )
     log_action(conn, session['user_id'], 'answer', rid,
-               f'\u0421\u043f\u043e\u0441\u043e\u0431: {method}' + (f' ({answer_sys_num})' if answer_sys_num else ''))
+               f'Способ: {method}' + (f' ({answer_sys_num})' if answer_sys_num else ''))
     conn.commit()
     conn.close()
-    flash('\u041e\u0442\u0432\u0435\u0442 \u0437\u0430\u0444\u0438\u043a\u0441\u0438\u0440\u043e\u0432\u0430\u043d', 'success')
+    flash('Ответ зафиксирован', 'success')
     return redirect(url_for('requests.view_request', rid=rid))
 
 
@@ -566,14 +575,14 @@ def answer_request(rid):
 def change_status(rid):
     ns = request.form.get('status')
     if ns not in ('draft', 'review', 'accepted', 'answered'):
-        flash('\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 \u0441\u0442\u0430\u0442\u0443\u0441', 'error')
+        flash('Неверный статус', 'error')
         return redirect(url_for('requests.view_request', rid=rid))
     conn = get_db()
     conn.execute(
         "UPDATE requests SET status=?, updated_at=? WHERE id=?",
         (ns, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), rid)
     )
-    log_action(conn, session['user_id'], 'status', rid, f'\u041d\u043e\u0432\u044b\u0439 \u0441\u0442\u0430\u0442\u0443\u0441: {ns}')
+    log_action(conn, session['user_id'], 'status', rid, f'Новый статус: {ns}')
     conn.commit()
     conn.close()
     return redirect(url_for('requests.view_request', rid=rid))
@@ -591,12 +600,12 @@ def toggle_favorite(rid):
     ).fetchone()
     if row:
         conn.execute("DELETE FROM favorites WHERE id=?", (row['id'],))
-        log_action(conn, uid, 'favorite', rid, '\u0423\u0431\u0440\u0430\u043d\u043e \u0438\u0437 \u0438\u0437\u0431\u0440\u0430\u043d\u043d\u043e\u0433\u043e')
+        log_action(conn, uid, 'favorite', rid, 'Убрано из избранного')
     else:
         conn.execute(
             "INSERT OR IGNORE INTO favorites (user_id,request_id) VALUES (?,?)", (uid, rid)
         )
-        log_action(conn, uid, 'favorite', rid, '\u0414\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u043e \u0432 \u0438\u0437\u0431\u0440\u0430\u043d\u043d\u043e\u0435')
+        log_action(conn, uid, 'favorite', rid, 'Добавлено в избранное')
     conn.commit()
     conn.close()
     return redirect(request.referrer or url_for('requests.index'))
@@ -613,14 +622,14 @@ def delete_request(rid):
         "SELECT request_number, applicant_short_name FROM requests WHERE id=?", (rid,)
     ).fetchone()
     num  = req['request_number'] or f'ID:{rid}' if req else f'ID:{rid}'
-    name = req['applicant_short_name'] or '\u2014' if req else '\u2014'
+    name = req['applicant_short_name'] or '—' if req else '—'
 
     log_action(conn, session['user_id'], 'delete', rid,
-               f'\u0423\u0434\u0430\u043b\u0435\u043d\u043e \u043e\u0431\u0440\u0430\u0449\u0435\u043d\u0438\u0435 {num} ({name})')
+               f'Удалено обращение {num} ({name})')
     conn.execute("DELETE FROM requests WHERE id=?", (rid,))
     conn.commit()
     conn.close()
-    flash('\u041e\u0431\u0440\u0430\u0449\u0435\u043d\u0438\u0435 \u0443\u0434\u0430\u043b\u0435\u043d\u043e', 'success')
+    flash('Обращение удалено', 'success')
     return redirect(url_for('requests.index'))
 
 
@@ -643,19 +652,19 @@ def assign_number(rid):
     req  = conn.execute("SELECT * FROM requests WHERE id=?", (rid,)).fetchone()
     if not req or req['request_number']:
         conn.close()
-        flash('\u041d\u043e\u043c\u0435\u0440 \u0443\u0436\u0435 \u043f\u0440\u0438\u0441\u0432\u043e\u0435\u043d \u0438\u043b\u0438 \u043e\u0431\u0440\u0430\u0449\u0435\u043d\u0438\u0435 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u043e', 'warning')
+        flash('Номер уже присвоен или обращение не найдено', 'warning')
         return redirect(url_for('requests.view_request', rid=rid))
 
     year  = datetime.now().year
     count = conn.execute(
         "SELECT COUNT(*) FROM requests WHERE request_number IS NOT NULL"
     ).fetchone()[0] + 1
-    num   = f"\u0417\u0423-{year}-{count:04d}"
+    num   = f"ЗУ-{year}-{count:04d}"
 
     conn.execute("UPDATE requests SET request_number=? WHERE id=?", (num, rid))
     log_action(conn, session['user_id'], 'status', rid,
-               f'\u041f\u0440\u0438\u0441\u0432\u043e\u0435\u043d \u043d\u043e\u043c\u0435\u0440: {num}')
+               f'Присвоен номер: {num}')
     conn.commit()
     conn.close()
-    flash(f'\u041f\u0440\u0438\u0441\u0432\u043e\u0435\u043d \u043d\u043e\u043c\u0435\u0440: {num}', 'success')
+    flash(f'Присвоен номер: {num}', 'success')
     return redirect(url_for('requests.view_request', rid=rid))
