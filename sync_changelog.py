@@ -88,10 +88,11 @@ def fetch_roadmap():
     roadmap = []
 
     STATUS_MAP = {
-        "\u0412 \u0440\u0430\u0431\u043e\u0442\u0435":      "in_progress",
-        "\u0417\u0430\u043f\u043b\u0430\u043d\u0438\u0440\u043e\u0432\u0430\u043d\u043e": "planned",
-        "\u0418\u0434\u0435\u0438":          "idea",
-        "\u0420\u0435\u0430\u043b\u0438\u0437\u043e\u0432\u0430\u043d\u043e":   "done",
+        "В работе":      "in_progress",
+        "Запланировано": "planned",
+        "Идеи":          "idea",
+        "Реализовано":   "done",
+        "Готово":        "done",
     }
 
     current_status = "planned"
