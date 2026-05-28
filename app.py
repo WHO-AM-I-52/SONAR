@@ -10,7 +10,7 @@ from datetime import datetime, date, timedelta
 
 from db import get_db, DB_PATH, BASE_DIR, UPLOADS_DIR, REPORTS_DIR
 from auth_utils import hash_pw, ADMIN_PERMISSIONS
-from changelog import CHANGELOG, ROADMAP
+from changelog import CHANGELOG
 from spravochnik import LEGAL_FORMS_DEFAULT, DISTRICTS_DEFAULT, SOURCE_TYPES_DEFAULT
 
 app = Flask(__name__)
