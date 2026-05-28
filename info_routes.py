@@ -10,7 +10,8 @@
 from flask import Blueprint, render_template, session, jsonify, request as flask_request
 from db import get_db, BASE_DIR
 from auth_utils import login_required
-from changelog import CHANGELOG, ROADMAP
+from changelog import CHANGELOG
+from roadmap import ROADMAP
 from datetime import datetime
 import os
 import sys
