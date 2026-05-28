@@ -2,8 +2,8 @@ ROADMAP = [
     {
         "version": "v2.4",
         "title": "OCR и автозаполнение",
-        "status": "planned",
-        "eta": "июнь 2026",
+        "status": "idea",
+        "eta": "",
         "points": [
             "Автозаполнение полей формы по скану анкеты (PDF/DOCX)",
             "Поддержка форматов: PDF, DOCX, JPG, PNG",
@@ -13,8 +13,8 @@ ROADMAP = [
     {
         "version": "v2.5",
         "title": "Уведомления на почту",
-        "status": "planned",
-        "eta": "июль 2026",
+        "status": "idea",
+        "eta": "",
         "points": [
             "Уведомления на почту при назначении обращения",
             "Напоминания о просроченных обращениях",
@@ -22,10 +22,21 @@ ROADMAP = [
         ],
     },
     {
+        "version": "",
+        "title": "Автообновление в интерфейсе",
+        "status": "idea",
+        "eta": "",
+        "points": [
+            "Встроенная проверка новых версий при запуске",
+            "Автоматическое обновление кода из GitHub одной кнопкой",
+            "Отображение текущей и доступной версии в интерфейсе",
+        ],
+    },
+    {
         "version": "v3.0",
         "title": "Автоподбор земельных участков (#37)",
         "status": "idea",
-        "eta": "2027",
+        "eta": "",
         "points": [
             "Автоматический подбор участков под анкеты по базе land_plots и request_plots",
             "Алгоритм подбора в plot_matcher.py (find_plots, assign_plot)",
@@ -36,7 +47,7 @@ ROADMAP = [
         "version": "v3.1",
         "title": "ИИ-поиск по участкам (#38)",
         "status": "idea",
-        "eta": "2027",
+        "eta": "",
         "points": [
             "Поиск по участкам на естественном языке через Perplexity Sonar API",
             "Два режима: поиск по вебу и по внутренней базе land_plots",
@@ -47,7 +58,7 @@ ROADMAP = [
         "version": "v3.2",
         "title": "Telegram-уведомления (#39)",
         "status": "idea",
-        "eta": "2027",
+        "eta": "",
         "points": [
             "Уведомления о заявках, релизах и сводках dashboard через Telegram (Вариант А)",
             "Модули telegram_notify.py и scheduler.py",
@@ -58,7 +69,7 @@ ROADMAP = [
         "version": "v3.3",
         "title": "Telegram как канал приёма заявок (#40)",
         "status": "idea",
-        "eta": "2027",
+        "eta": "",
         "points": [
             "Intake-бот на aiogram 3.x для приёма обращений через Telegram",
             "Новый модуль tg_bot.py, поле source_type='Telegram' в БД",
