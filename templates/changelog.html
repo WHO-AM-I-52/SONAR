@@ -7,6 +7,7 @@
   .version-next    .card-header { background: #0d6efd !important; color: #fff !important; }
   .version-done    .card-header { background: #f0f0f0; }
   .version-planned .card-header { background: #f0f4f8; }
+  .version-idea    .card-header { background: #f3f0fa; }
 
   details > summary {
     cursor: pointer;
@@ -163,10 +164,15 @@
   </h5>
 </div>
 
-{% set done_items    = roadmap | selectattr('status','eq','done')    | list %}
-{% set planned_items = roadmap | selectattr('status','eq','planned') | list %}
-{% set next_item     = planned_items[0] if planned_items else none %}
-{% set future_items  = planned_items[1:] if planned_items|length > 1 else [] %}
+{% set done_items       = roadmap | selectattr('status','eq','done')        | list %}
+{% set planned_items    = roadmap | selectattr('status','eq','planned')     | list %}
+{% set inprogress_items = roadmap | selectattr('status','eq','in_progress') | list %}
+{% set idea_items       = roadmap | selectattr('status','eq','idea')        | list %}
+{% set next_item        = inprogress_items[0] if inprogress_items else (planned_items[0] if planned_items else none) %}
+{% set future_items     = planned_items[1:] if (inprogress_items and planned_items) else (planned_items[1:] if planned_items|length > 1 else []) %}
+{% if inprogress_items %}
+{% set future_items = planned_items %}
+{% endif %}
 
 <div style="max-width:760px">
 
@@ -222,17 +228,22 @@
   {# ── разделитель ── #}
   <div class="timeline-divider">в планах</div>
 
-  {# ── 3. Следующая версия ── #}
+  {# ── 3. Следующая / в работе ── #}
   {% if next_item %}
   <div class="card mb-3 version-next">
     <div class="card-header d-flex justify-content-between align-items-center">
       <div class="d-flex align-items-center gap-2">
+        {% if next_item.status == 'in_progress' %}
+        <span class="badge bg-danger" style="font-size:10px">В работе</span>
+        {% else %}
         <span class="badge bg-warning text-dark" style="font-size:10px">Следующая</span>
+        {% endif %}
         <span class="badge" style="background:rgba(255,255,255,0.25);font-size:12px">{{ next_item.version }}</span>
         <strong style="font-size:15px">{{ next_item.title }}</strong>
       </div>
       <span class="badge" style="background:#cce5ff;color:#004085;font-size:11px">
-        <i class="bi bi-hourglass-split me-1"></i> В плане
+        <i class="bi bi-hourglass-split me-1"></i>
+        {% if next_item.status == 'in_progress' %}В работе{% else %}В плане{% endif %}
       </span>
     </div>
     <ul class="list-group list-group-flush">
@@ -245,7 +256,7 @@
   </div>
   {% endif %}
 
-  {# ── 4. Спойлер: будущие планы ── #}
+  {# ── 4. Спойлер: будущие планы (planned) ── #}
   {% if future_items %}
   <details class="mb-3">
     <summary>
@@ -278,6 +289,39 @@
   </details>
   {% endif %}
 
+  {# ── 5. Спойлер: ИДЕИ (idea) ── #}
+  {% if idea_items %}
+  <details class="mb-3">
+    <summary>
+      <i class="bi bi-lightbulb" style="color:#6f42c1"></i>
+      Идеи и дальние планы
+      <span class="badge ms-auto" style="background:#6f42c1;font-size:11px">{{ idea_items|length }}</span>
+    </summary>
+    <div class="spoiler-content">
+      {% for item in idea_items %}
+      <div class="card mb-3 version-idea">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge" style="background:#6f42c1;font-size:12px">{{ item.version }}</span>
+            <strong style="color:#2d1b5e;font-size:15px">{{ item.title }}</strong>
+          </div>
+          <span class="badge" style="background:#e8d5ff;color:#4a1d8a;font-size:11px">
+            <i class="bi bi-lightbulb me-1"></i> Идея
+          </span>
+        </div>
+        <ul class="list-group list-group-flush">
+          {% for point in item.points %}
+          <li class="list-group-item" style="font-size:14px;color:#495057">
+            <i class="bi bi-dot me-1" style="color:#6f42c1"></i> {{ point }}
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+
 </div>
 
 {% if session.get('role') == 'admin' %}
@@ -291,25 +335,23 @@
   var _countdown      = document.getElementById('nextCheckCountdown');
   var _UPD_CACHE      = 'sonar_upd_status';
 
-  // ── Расписание автопроверок: 12:00 и 17:00 ──────────────────────────────
+  // ── Расписание автопроверок: 12:00 и 17:00 ─────────────────────────
   var AUTO_CHECK_HOURS = [12, 17];
 
-  // Возвращает ближайший момент автопроверки (Date)
   function _nextCheckTarget() {
     var now = new Date();
     var candidates = AUTO_CHECK_HOURS.map(function(h) {
       var t = new Date(now);
       t.setHours(h, 0, 0, 0);
-      if (t <= now) t.setDate(t.getDate() + 1); // уже прошло — следующий день
+      if (t <= now) t.setDate(t.getDate() + 1);
       return t;
     });
     return candidates.reduce(function(a, b) { return a < b ? a : b; });
   }
 
   var _nextTarget = _nextCheckTarget();
-  var _autoCheckFired = false; // защита от двойного срабатывания в одну секунду
+  var _autoCheckFired = false;
 
-  // ── Тикающий счётчик ────────────────────────────────────────────────────
   function _pad(n) { return n < 10 ? '0' + n : '' + n; }
 
   function _tickCountdown() {
@@ -317,12 +359,10 @@
     var diff = _nextTarget - now;
 
     if (diff <= 0) {
-      // Время пришло — запускаем автопроверку один раз
       if (!_autoCheckFired) {
         _autoCheckFired = true;
         _countdown.textContent = '00:00:00';
         updCheck(true);
-        // Сдвигаем цель на следующий период
         setTimeout(function() {
           _nextTarget = _nextCheckTarget();
           _autoCheckFired = false;
@@ -338,11 +378,9 @@
     _countdown.textContent = _pad(hh) + ':' + _pad(mm) + ':' + _pad(ss);
   }
 
-  // Запускаем счётчик сразу и затем каждую секунду
   _tickCountdown();
   setInterval(_tickCountdown, 1000);
 
-  // ── Вспомогательные функции панели ──────────────────────────────────────
   function _updSetStatus(html, type) {
     _updStatus.innerHTML = html;
     _updPanel.className = _updPanel.className
@@ -388,7 +426,6 @@
     if (data.output) _updShowLog(data.output);
   }
 
-  // force=true — сбрасывает браузерный sessionStorage и серверный кэш (?force=1)
   function updCheck(force) {
     if (force) sessionStorage.removeItem(_UPD_CACHE);
 
@@ -488,7 +525,6 @@
       });
   }
 
-  // Автопроверка при загрузке страницы — берёт кэш если есть
   updCheck(false);
 </script>
 {% endif %}
