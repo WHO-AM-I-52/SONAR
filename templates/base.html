@@ -2,7 +2,7 @@
 {# ╔══════════════════════════════════════════════════════════════╗ #}
 {# ║                        base.html                            ║ #}
 {# ║  Базовый шаблон приложения "Подбор ЗУ — НО"                 ║ #}
-{# ║  v2.12: ping 30s/5min, значок обновления — живая проверка  ║ #}
+{# ║  v2.13: ссылка «Инвестплощадки» в сайдбаре (admin)         ║ #}
 {# ╚══════════════════════════════════════════════════════════════╝ #}
 <html lang="ru">
 <head>
@@ -358,6 +358,7 @@
     <div class="sb-cat">Администратор</div>
     <a href="/admin/classifiers" class="sb-link {{ 'active' if 'classifiers' in request.path }}"><i class="bi bi-tags"></i><span class="sb-lbl">Справочники</span></a>
     <a href="/admin/users" class="sb-link {{ 'active' if 'users' in request.path }}"><i class="bi bi-people"></i><span class="sb-lbl">Пользователи</span></a>
+    <a href="/admin/investmap" class="sb-link {{ 'active' if 'investmap' in request.path }}"><i class="bi bi-pin-map-fill"></i><span class="sb-lbl">Инвестплощадки</span></a>
     {% endif %}
     <div class="sb-sep"></div>
     <a href="{{ url_for('misc.changelog') }}" class="sb-link {{ 'active' if request.path=='/changelog' }}" id="sbChangelogLink">
