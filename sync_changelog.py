@@ -10,6 +10,7 @@ BRANCH = "main"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CHANGELOG_PATH = os.path.join(BASE_DIR, "changelog.py")
 
+
 def load_token():
     env_path = os.path.join(BASE_DIR, ".env")
     if os.path.exists(env_path):
@@ -20,7 +21,9 @@ def load_token():
                     return line.split("=", 1)[1].strip()
     return None
 
+
 TOKEN = load_token()
+
 
 def _headers():
     h = {"User-Agent": "SONAR-Sync", "Accept": "application/vnd.github+json"}
@@ -28,15 +31,28 @@ def _headers():
         h["Authorization"] = f"Bearer {TOKEN}"
     return h
 
+
 def get_json(url):
     req = urllib.request.Request(url, headers=_headers())
     with urllib.request.urlopen(req, timeout=15) as r:
         return json.loads(r.read().decode())
 
+
 def get_text(url):
     req = urllib.request.Request(url, headers={"User-Agent": "SONAR-Sync"})
     with urllib.request.urlopen(req, timeout=15) as r:
         return r.read().decode("utf-8")
+
+
+def _py_str(value: str) -> str:
+    """Возвращает корректный Python-строковый литерал для любого текста.
+
+    Использует repr() вместо ручной замены кавычек — безопасно экранирует
+    одинарные кавычки, двойные кавычки, переносы строк и спецсимволы.
+    fix #33
+    """
+    return repr(str(value))
+
 
 def fetch_releases():
     data = get_json(
@@ -56,12 +72,13 @@ def fetch_releases():
         changes = []
         for line in body.splitlines():
             line = line.strip()
-            if line.startswith(("-", "*", "–")):
-                changes.append(line.lstrip("-*– ").strip())
+            if line.startswith(("-", "*", "\u2013")):
+                changes.append(line.lstrip("-*\u2013 ").strip())
         if not changes:
             changes = [r.get("name", f"Release {version}")]
         changelog.append({"version": version, "date": date, "changes": changes})
     return changelog
+
 
 def fetch_roadmap():
     url = (f"https://raw.githubusercontent.com/"
@@ -70,10 +87,10 @@ def fetch_roadmap():
     roadmap = []
 
     STATUS_MAP = {
-        "В работе":      "in_progress",
-        "Запланировано": "planned",
-        "Идеи":          "idea",
-        "Реализовано":   "done",
+        "\u0412 работе":      "in_progress",
+        "\u0417апланировано": "planned",
+        "\u0418деи":          "idea",
+        "\u0420еализовано":   "done",
     }
 
     current_status = "planned"
@@ -113,15 +130,17 @@ def fetch_roadmap():
     roadmap = [r for r in roadmap if r["status"] != "done"]
     return roadmap
 
+
 def write_changelog(changelog, roadmap):
+    """Генерирует changelog.py с корректным экранированием строк через repr()."""
     lines = ["CHANGELOG = [\n"]
     for entry in changelog:
         lines.append("    {\n")
-        lines.append(f'        "version": "{entry["version"]}",\n')
-        lines.append(f'        "date": "{entry["date"]}",\n')
+        lines.append(f'        "version": {_py_str(entry["version"])},\n')
+        lines.append(f'        "date": {_py_str(entry["date"])},\n')
         lines.append('        "changes": [\n')
         for c in entry["changes"]:
-            lines.append(f'            "{c.replace(chr(34), chr(39))}",\n')
+            lines.append(f'            {_py_str(c)},\n')
         lines.append("        ],\n")
         lines.append("    },\n")
     lines.append("]\n\n")
@@ -129,17 +148,18 @@ def write_changelog(changelog, roadmap):
     lines.append("ROADMAP = [\n")
     for entry in roadmap:
         lines.append("    {\n")
-        lines.append(f'        "title": "{entry["title"]}",\n')
-        lines.append(f'        "status": "{entry["status"]}",\n')
+        lines.append(f'        "title": {_py_str(entry["title"])},\n')
+        lines.append(f'        "status": {_py_str(entry["status"])},\n')
         lines.append('        "points": [\n')
         for p in entry["points"]:
-            lines.append(f'            "{p.replace(chr(34), chr(39))}",\n')
+            lines.append(f'            {_py_str(p)},\n')
         lines.append("        ],\n")
         lines.append("    },\n")
     lines.append("]\n")
 
     with open(CHANGELOG_PATH, "w", encoding="utf-8") as f:
         f.writelines(lines)
+
 
 def main():
     print("  Синхронизация changelog с GitHub...")
@@ -165,6 +185,7 @@ def main():
         print("  changelog.py обновлён.")
     except Exception as e:
         print(f"  [ОШИБКА] {e}")
+
 
 if __name__ == "__main__":
     main()
