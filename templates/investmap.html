@@ -1,94 +1,107 @@
 {% extends 'base.html' %}
 {# ╔══════════════════════════════════════════════════════════════╗ #}
-{# ║                    investmap.html                            ║ #}
-{# ║  v1.0: загрузка .xlsx → текстовый блок → копирование        ║ #}
+{# ║                    investmap.html                           ║ #}
+{# ║  Конвертер выгрузки инвестплощадок → текст для ИИ          ║ #}
 {# ╚══════════════════════════════════════════════════════════════╝ #}
 
 {% block content %}
 <div class="d-flex align-items-center gap-2 mb-3">
-  <i class="bi bi-map-fill fs-4" style="color:#1B5E7B"></i>
-  <h4 class="mb-0">Инвестиционные площадки</h4>
-  <span class="badge bg-secondary ms-1" style="font-size:10px">Excel → Текст</span>
+  <i class="bi bi-map fs-4" style="color:#1B5E7B"></i>
+  <h5 class="mb-0 fw-bold">Инвестплощадки — конвертер для ИИ</h5>
+  <span class="badge bg-warning text-dark ms-1" style="font-size:10px">ADMIN</span>
 </div>
+<p class="text-muted" style="font-size:13px">
+  Загрузите выгрузку из ГИС НСИ (.xlsx) — система автоматически определит формат,
+  преобразует данные в текст и подготовит для вставки в чат с ИИ-аналитиком.
+</p>
 
 <div class="row g-3">
-
-  {# ── Загрузка файла ── #}
+  {# ─── Загрузка файла ──────────────────────────────────────────── #}
   <div class="col-12 col-lg-5">
     <div class="card h-100">
-      <div class="card-header fw-semibold" style="font-size:13px">
-        <i class="bi bi-upload me-1"></i> Загрузить файл
-      </div>
       <div class="card-body">
+        <h6 class="fw-semibold mb-3"><i class="bi bi-upload me-2"></i>Загрузить файл</h6>
 
-        <div id="dropZone"
-             style="border:2px dashed var(--input-border);border-radius:8px;padding:32px 16px;
-                    text-align:center;cursor:pointer;transition:border-color .2s,background .2s;"
-             onclick="document.getElementById('fileInput').click()">
-          <i class="bi bi-file-earmark-spreadsheet" style="font-size:36px;color:#1B5E7B;opacity:.7"></i>
+        <div id="dropzone"
+             style="border:2px dashed var(--input-border);border-radius:10px;padding:32px 16px;
+                    text-align:center;cursor:pointer;transition:border-color .2s,background .2s;
+                    background:var(--surface2)">
+          <i class="bi bi-file-earmark-excel" style="font-size:36px;color:#1D6F42"></i>
           <div class="mt-2" style="font-size:13px;color:var(--text-muted)">
-            Перетащите .xlsx файл сюда<br>или <strong style="color:#1B5E7B">нажмите для выбора</strong>
+            Перетащите .xlsx сюда<br>или нажмите для выбора
           </div>
-          <div id="fileNameLabel" class="mt-2 fw-semibold" style="font-size:13px;color:#1B5E7B;display:none"></div>
-        </div>
-        <input type="file" id="fileInput" accept=".xlsx,.xls" class="d-none">
-
-        <div class="mt-3">
-          <label class="form-label" style="font-size:12px">Формат файла</label>
-          <select id="formatSelect" class="form-select form-select-sm">
-            <option value="auto">Автоопределение</option>
-            <option value="single">Формат 1 — 2 столбца (атрибут | значение)</option>
-            <option value="multi">Формат 2 — таблица (первая строка — заголовки)</option>
-          </select>
+          <input type="file" id="fileInput" accept=".xlsx" style="display:none">
         </div>
 
-        <button id="parseBtn" class="btn btn-primary w-100 mt-3" disabled>
-          <i class="bi bi-magic me-1"></i> Сформировать текст
+        <div id="fileInfo" class="mt-2 d-none">
+          <div class="d-flex align-items-center gap-2 p-2 rounded" style="background:var(--surface2);font-size:13px">
+            <i class="bi bi-file-earmark-spreadsheet text-success"></i>
+            <span id="fileName" class="fw-semibold"></span>
+            <button class="btn btn-sm btn-outline-secondary ms-auto py-0 px-1" id="clearFile"
+                    style="font-size:11px">✕</button>
+          </div>
+        </div>
+
+        <button class="btn btn-primary w-100 mt-3" id="convertBtn" disabled>
+          <i class="bi bi-arrow-right-circle me-1"></i>Конвертировать
         </button>
 
-        <div id="errMsg" class="alert alert-danger mt-2 py-2" style="font-size:12px;display:none"></div>
-
-      </div>
-    </div>
-  </div>
-
-  {# ── Результат ── #}
-  <div class="col-12 col-lg-7">
-    <div class="card h-100">
-      <div class="card-header d-flex align-items-center justify-content-between" style="font-size:13px">
-        <span class="fw-semibold"><i class="bi bi-text-left me-1"></i> Результат</span>
-        <div class="d-flex gap-2">
-          <span id="formatBadge" class="badge bg-secondary" style="font-size:10px;display:none"></span>
-          <button id="copyBtn" class="btn btn-sm btn-outline-secondary" style="font-size:12px" disabled>
-            <i class="bi bi-clipboard me-1"></i> Копировать
-          </button>
-          <button id="clearBtn" class="btn btn-sm btn-outline-danger" style="font-size:12px" disabled>
-            <i class="bi bi-x-lg"></i>
-          </button>
+        <div id="convertSpinner" class="text-center mt-2 d-none">
+          <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+          <span class="ms-2" style="font-size:13px">Обработка…</span>
         </div>
       </div>
-      <div class="card-body p-0">
-        <textarea id="resultArea"
-                  class="form-control border-0 rounded-0 rounded-bottom"
-                  style="min-height:420px;resize:vertical;font-size:13px;font-family:monospace;
-                         background:var(--input-bg);color:var(--text);"
-                  placeholder="Здесь появится сформированный текст…"
-                  readonly></textarea>
-      </div>
     </div>
   </div>
 
+  {# ─── Результат ──────────────────────────────────────────────── #}
+  <div class="col-12 col-lg-7">
+    <div class="card h-100">
+      <div class="card-body d-flex flex-column">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <h6 class="fw-semibold mb-0"><i class="bi bi-chat-text me-2"></i>Результат</h6>
+          <div class="d-flex gap-2">
+            <span id="resultBadge" class="badge bg-secondary d-none"></span>
+            <button class="btn btn-sm btn-outline-primary d-none" id="copyBtn">
+              <i class="bi bi-clipboard me-1"></i>Копировать
+            </button>
+          </div>
+        </div>
+
+        <div id="resultEmpty" class="flex-grow-1 d-flex align-items-center justify-content-center"
+             style="color:var(--text-muted);font-size:13px;min-height:220px">
+          <div class="text-center">
+            <i class="bi bi-arrow-left-circle" style="font-size:28px;opacity:.3"></i>
+            <div class="mt-2">Загрузите файл и нажмите «Конвертировать»</div>
+          </div>
+        </div>
+
+        <textarea id="resultText"
+                  class="form-control flex-grow-1 d-none"
+                  style="min-height:320px;font-size:12px;font-family:monospace;resize:vertical"
+                  readonly></textarea>
+
+        <div id="resultError" class="alert alert-danger mt-2 d-none" style="font-size:13px"></div>
+      </div>
+    </div>
+  </div>
 </div>
 
-{# ── Справка ── #}
+{# ─── Подсказка по форматам ──────────────────────────────────── #}
 <div class="card mt-3">
-  <div class="card-body py-2 px-3" style="font-size:12px;color:var(--text-muted)">
-    <i class="bi bi-info-circle me-1"></i>
-    <strong>Формат 1</strong> — файл из двух столбцов: левый — название атрибута, правый — значение (одна площадка).
-    &nbsp;|&nbsp;
-    <strong>Формат 2</strong> — таблица: первая строка — заголовки, каждая следующая строка — отдельная площадка.
-    &nbsp;|&nbsp;
-    При <strong>Автоопределении</strong> формат выбирается по количеству столбцов.
+  <div class="card-body py-2 px-3">
+    <div class="row g-2" style="font-size:12px;color:var(--text-muted)">
+      <div class="col-12 col-md-6">
+        <i class="bi bi-info-circle me-1 text-primary"></i>
+        <strong>Формат 1</strong> (1 площадка): 2 столбца — «Атрибут | Значение».
+        Результат: один блок текста.
+      </div>
+      <div class="col-12 col-md-6">
+        <i class="bi bi-info-circle me-1 text-primary"></i>
+        <strong>Формат 2</strong> (несколько площадок): строка 1 = заголовки, остальные = данные.
+        Результат: блоки «=== ПЛОЩАДКА N ===".
+      </div>
+    </div>
   </div>
 </div>
 {% endblock %}
@@ -96,114 +109,144 @@
 {% block scripts %}
 <script>
 (function(){
-  var dropZone   = document.getElementById('dropZone');
+  var dropzone   = document.getElementById('dropzone');
   var fileInput  = document.getElementById('fileInput');
-  var parseBtn   = document.getElementById('parseBtn');
+  var fileInfo   = document.getElementById('fileInfo');
+  var fileName   = document.getElementById('fileName');
+  var clearFile  = document.getElementById('clearFile');
+  var convertBtn = document.getElementById('convertBtn');
+  var spinner    = document.getElementById('convertSpinner');
+  var resultEmpty = document.getElementById('resultEmpty');
+  var resultText = document.getElementById('resultText');
+  var resultError= document.getElementById('resultError');
+  var resultBadge= document.getElementById('resultBadge');
   var copyBtn    = document.getElementById('copyBtn');
-  var clearBtn   = document.getElementById('clearBtn');
-  var resultArea = document.getElementById('resultArea');
-  var errMsg     = document.getElementById('errMsg');
-  var fileLabel  = document.getElementById('fileNameLabel');
-  var fmtSelect  = document.getElementById('formatSelect');
-  var fmtBadge   = document.getElementById('formatBadge');
 
   var selectedFile = null;
 
-  function setFile(f) {
-    selectedFile = f;
-    fileLabel.textContent = f.name;
-    fileLabel.style.display = 'block';
-    parseBtn.disabled = false;
-    dropZone.style.borderColor = '#1B5E7B';
-    dropZone.style.background  = 'rgba(27,94,123,.05)';
-    hideErr();
-  }
-
-  function hideErr() { errMsg.style.display = 'none'; }
-  function showErr(msg) { errMsg.textContent = msg; errMsg.style.display = 'block'; }
-
-  fileInput.addEventListener('change', function(){
-    if (this.files[0]) setFile(this.files[0]);
-  });
-
-  /* Drag & Drop */
-  ['dragover','dragenter'].forEach(function(ev){
-    dropZone.addEventListener(ev, function(e){ e.preventDefault(); dropZone.style.borderColor='#1B5E7B'; });
-  });
-  ['dragleave','dragend'].forEach(function(ev){
-    dropZone.addEventListener(ev, function(){ if (!selectedFile) dropZone.style.borderColor=''; });
-  });
-  dropZone.addEventListener('drop', function(e){
+  // ─── Drag & Drop ──────────────────────────────────────────────
+  dropzone.addEventListener('click', function(){ fileInput.click(); });
+  dropzone.addEventListener('dragover', function(e){
     e.preventDefault();
+    dropzone.style.borderColor = '#1B5E7B';
+    dropzone.style.background  = 'rgba(27,94,123,.08)';
+  });
+  dropzone.addEventListener('dragleave', function(){
+    dropzone.style.borderColor = '';
+    dropzone.style.background  = '';
+  });
+  dropzone.addEventListener('drop', function(e){
+    e.preventDefault();
+    dropzone.style.borderColor = '';
+    dropzone.style.background  = '';
     var f = e.dataTransfer.files[0];
     if (f) setFile(f);
   });
-
-  /* Парсинг */
-  parseBtn.addEventListener('click', function(){
-    if (!selectedFile) return;
-    hideErr();
-    parseBtn.disabled = true;
-    parseBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Обработка…';
-
-    var fd = new FormData();
-    fd.append('file', selectedFile);
-    var fmt = fmtSelect.value;
-    if (fmt !== 'auto') fd.append('format', fmt);
-
-    fetch('/investmap/parse', { method:'POST', body:fd, credentials:'same-origin' })
-      .then(function(r){ return r.json(); })
-      .then(function(data){
-        if (data.error) {
-          showErr(data.error);
-        } else {
-          resultArea.value = data.text;
-          copyBtn.disabled  = false;
-          clearBtn.disabled = false;
-          var fmtName = data.format === 'multi' ? 'Формат 2 (таблица)' : 'Формат 1 (атрибут|значение)';
-          fmtBadge.textContent = fmtName;
-          fmtBadge.style.display = 'inline-block';
-        }
-      })
-      .catch(function(){ showErr('Ошибка сети. Попробуйте ещё раз.'); })
-      .finally(function(){
-        parseBtn.disabled = false;
-        parseBtn.innerHTML = '<i class="bi bi-magic me-1"></i> Сформировать текст';
-      });
+  fileInput.addEventListener('change', function(){
+    if (fileInput.files[0]) setFile(fileInput.files[0]);
   });
 
-  /* Копирование */
+  function setFile(f){
+    if (!f.name.toLowerCase().endsWith('.xlsx')){
+      showError('Поддерживается только .xlsx');
+      return;
+    }
+    selectedFile = f;
+    fileName.textContent = f.name;
+    fileInfo.classList.remove('d-none');
+    convertBtn.disabled = false;
+    clearResult();
+  }
+
+  clearFile.addEventListener('click', function(e){
+    e.stopPropagation();
+    selectedFile = null;
+    fileInput.value = '';
+    fileInfo.classList.add('d-none');
+    convertBtn.disabled = true;
+    clearResult();
+  });
+
+  // ─── Конвертация ──────────────────────────────────────────────
+  convertBtn.addEventListener('click', function(){
+    if (!selectedFile) return;
+    var fd = new FormData();
+    fd.append('file', selectedFile);
+
+    convertBtn.disabled = true;
+    spinner.classList.remove('d-none');
+    clearResult();
+
+    fetch('/admin/investmap/convert', {
+      method: 'POST',
+      body: fd,
+      credentials: 'same-origin'
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      spinner.classList.add('d-none');
+      convertBtn.disabled = false;
+
+      if (data.error){
+        showError('Ошибка: ' + data.error);
+        return;
+      }
+
+      // Показываем текст
+      resultEmpty.classList.add('d-none');
+      resultText.classList.remove('d-none');
+      resultText.value = data.text;
+
+      // Бейдж
+      resultBadge.classList.remove('d-none');
+      if (data.format === 1){
+        resultBadge.className = 'badge bg-primary';
+        resultBadge.textContent = 'Формат 1 · 1 площадка';
+      } else {
+        resultBadge.className = 'badge bg-success';
+        resultBadge.textContent = 'Формат 2 · ' + data.count + ' площадок';
+      }
+
+      copyBtn.classList.remove('d-none');
+    })
+    .catch(function(e){
+      spinner.classList.add('d-none');
+      convertBtn.disabled = false;
+      showError('Сетевая ошибка: ' + e);
+    });
+  });
+
+  // ─── Копировать ───────────────────────────────────────────────
   copyBtn.addEventListener('click', function(){
-    var text = resultArea.value;
-    if (!text) return;
-    navigator.clipboard.writeText(text).then(function(){
-      copyBtn.innerHTML = '<i class="bi bi-check-lg me-1"></i> Скопировано!';
-      copyBtn.classList.replace('btn-outline-secondary','btn-success');
+    if (!resultText.value) return;
+    navigator.clipboard.writeText(resultText.value).then(function(){
+      var orig = copyBtn.innerHTML;
+      copyBtn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Скопировано!';
+      copyBtn.classList.replace('btn-outline-primary', 'btn-success');
       setTimeout(function(){
-        copyBtn.innerHTML = '<i class="bi bi-clipboard me-1"></i> Копировать';
-        copyBtn.classList.replace('btn-success','btn-outline-secondary');
+        copyBtn.innerHTML = orig;
+        copyBtn.classList.replace('btn-success', 'btn-outline-primary');
       }, 2000);
     }).catch(function(){
-      /* fallback для старых браузеров */
-      resultArea.select();
+      resultText.select();
       document.execCommand('copy');
     });
   });
 
-  /* Очистка */
-  clearBtn.addEventListener('click', function(){
-    resultArea.value = '';
-    copyBtn.disabled  = true;
-    clearBtn.disabled = true;
-    fmtBadge.style.display = 'none';
-    selectedFile = null;
-    fileInput.value = '';
-    fileLabel.style.display = 'none';
-    parseBtn.disabled = true;
-    dropZone.style.borderColor = '';
-    dropZone.style.background  = '';
-    hideErr();
-  });
+  function clearResult(){
+    resultEmpty.classList.remove('d-none');
+    resultText.classList.add('d-none');
+    resultText.value = '';
+    resultError.classList.add('d-none');
+    resultBadge.classList.add('d-none');
+    copyBtn.classList.add('d-none');
+  }
+
+  function showError(msg){
+    resultEmpty.classList.add('d-none');
+    resultError.classList.remove('d-none');
+    resultError.textContent = msg;
+  }
 
 })();
 </script>
