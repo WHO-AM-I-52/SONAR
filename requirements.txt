@@ -1,7 +1,7 @@
-flask
-openpyxl
-werkzeug
-python-docx
-Pillow
-python-dotenv
-pdfplumber
+flask==3.1.3
+openpyxl==3.1.5
+werkzeug==3.1.8
+python-docx==1.2.0
+Pillow==12.2.0
+python-dotenv==1.2.2
+pdfplumber==0.11.9
