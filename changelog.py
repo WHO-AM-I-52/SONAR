@@ -351,4 +351,15 @@ ROADMAP = [
             "Flask-маршрут /api/ai-land-search, модуль ai_search.py",
         ],
     },
+    {
+        "version": "v3.2",
+        "title": "Telegram-уведомления (#39)",
+        "status": "idea",
+        "eta": "2027",
+        "points": [
+            "Уведомления о заявках, релизах и сводках dashboard через Telegram (Вариант А)",
+            "Модули telegram_notify.py и scheduler.py",
+            "Настройка подписок в профиле пользователя",
+        ],
+    },
 ]
