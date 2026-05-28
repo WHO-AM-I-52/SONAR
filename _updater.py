@@ -1,9 +1,9 @@
-# ╔══════════════════════════════════════════════════════════════════════════╗
+# ╔════════════════════════════════════════════════════════════════════════╗
 # ║                         _updater.py                                     ║
 # ║  Скачивает обновления SONAR с GitHub одним zip-архивом (1 API-запрос)   ║
 # ║  Режим --check: сравнивает SHA и выходит без скачивания                 ║
 # ║  Не трогает БД и файлы пользователя.                                    ║
-# ╚══════════════════════════════════════════════════════════════════════════╝
+# ╚════════════════════════════════════════════════════════════════════════╝
 
 import urllib.request
 import urllib.error
@@ -16,6 +16,7 @@ import tempfile
 import ast
 import re
 from datetime import datetime
+from github_utils import load_token, get_headers, get_json, post_json
 
 REPO_OWNER    = "WHO-AM-I-52"
 REPO_NAME     = "SONAR"
@@ -25,6 +26,8 @@ API_BASE      = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}"
 COMMIT_FILE   = os.path.join(BASE_DIR, "_last_commit.txt")
 FALLBACK_KB   = 600
 
+AGENT = "SONAR-Updater"
+
 BAT_NAME = "start SONAR.bat"
 
 # update.bat намеренно НЕ защищён — обновляется автоматически как обычный файл
@@ -33,6 +36,8 @@ PROTECTED_DIRS  = {"uploads", "reports", "WPy", "Bacup", "db"}
 PROTECTED_FILES = {"_updater.py", ".env"}
 
 SPINNER = ["||", "|/", "--", "\\/"]
+
+TOKEN = load_token()
 
 
 def should_skip(rel_path: str) -> bool:
@@ -48,43 +53,13 @@ def should_skip(rel_path: str) -> bool:
     return False
 
 
-def load_token():
-    env_path = os.path.join(BASE_DIR, ".env")
-    if os.path.exists(env_path):
-        with open(env_path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("GITHUB_TOKEN="):
-                    return line.split("=", 1)[1].strip()
-    return None
-
-TOKEN = load_token()
-
 def _headers():
-    h = {"User-Agent": "SONAR-Updater", "Accept": "application/vnd.github+json"}
-    if TOKEN:
-        h["Authorization"] = f"Bearer {TOKEN}"
-    return h
+    return get_headers(AGENT)
 
-def get_json(url):
-    req = urllib.request.Request(url, headers=_headers())
-    with urllib.request.urlopen(req, timeout=30) as r:
-        data = json.loads(r.read().decode())
-        show_rate_limit(r.headers)
-        return data
 
-def post_json(url, payload):
-    body = json.dumps(payload).encode("utf-8")
-    req  = urllib.request.Request(
-        url, data=body,
-        headers={**_headers(), "Content-Type": "application/json"},
-        method="POST"
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=15) as r:
-            return r.status, json.loads(r.read().decode())
-    except urllib.error.HTTPError as e:
-        return e.code, json.loads(e.read().decode())
+def _get_json(url):
+    return get_json(url, agent=AGENT)
+
 
 def show_rate_limit(headers):
     remaining = headers.get("X-RateLimit-Remaining")
@@ -102,11 +77,11 @@ def show_rate_limit(headers):
           (f" (сброс в {reset_str})" if reset_str else ""))
 
 
-# ─── Проверка обновлений по SHA ───────────────────────────────────────────────
+# ─── Проверка обновлений по SHA ──────────────────────────────────────────────────
 
 def get_remote_sha() -> str | None:
     try:
-        data = get_json(f"{API_BASE}/commits/{BRANCH}")
+        data = _get_json(f"{API_BASE}/commits/{BRANCH}")
         return data.get("sha", "")
     except Exception as e:
         print(f"  [ОШИБКА] Не удалось получить SHA с GitHub: {e}")
@@ -163,7 +138,7 @@ def check_for_updates() -> int:
         return 1
 
 
-# ─── Размер архива ────────────────────────────────────────────────────────────
+# ─── Размер архива ──────────────────────────────────────────────────────────────
 
 def get_zip_size_kb() -> int:
     url = f"{API_BASE}/zipball/{BRANCH}"
@@ -299,12 +274,11 @@ def load_changelog():
         with open(changelog_path, encoding="utf-8") as f:
             source = f.read()
 
-        # Извлекаем значение CHANGELOG = [...] без выполнения кода
         match = re.search(r"CHANGELOG\s*=\s*(\[.*?\])", source, re.DOTALL)
         if not match:
             return None, None
 
-        cl = ast.literal_eval(match.group(1))  # парсит только данные, не выполняет логику
+        cl = ast.literal_eval(match.group(1))
         if not cl:
             return None, None
 
@@ -351,7 +325,8 @@ def ensure_github_release():
             "body":             body,
             "draft":            False,
             "prerelease":       False,
-        }
+        },
+        agent=AGENT
     )
     if status == 201:
         print(f"  [Релиз] {tag} успешно создан: {resp.get('html_url', '')}")

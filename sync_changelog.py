@@ -1,8 +1,8 @@
-import urllib.request
 import json
 import re
 import os
 from datetime import datetime
+from github_utils import load_token, get_headers, get_json
 
 REPO_OWNER = "WHO-AM-I-52"
 REPO_NAME = "SONAR"
@@ -11,35 +11,11 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CHANGELOG_PATH = os.path.join(BASE_DIR, "changelog.py")
 ROADMAP_PATH = os.path.join(BASE_DIR, "roadmap.py")
 
-
-def load_token():
-    env_path = os.path.join(BASE_DIR, ".env")
-    if os.path.exists(env_path):
-        with open(env_path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("GITHUB_TOKEN="):
-                    return line.split("=", 1)[1].strip()
-    return None
-
-
 TOKEN = load_token()
 
 
-def _headers():
-    h = {"User-Agent": "SONAR-Sync", "Accept": "application/vnd.github+json"}
-    if TOKEN:
-        h["Authorization"] = f"Bearer {TOKEN}"
-    return h
-
-
-def get_json(url):
-    req = urllib.request.Request(url, headers=_headers())
-    with urllib.request.urlopen(req, timeout=15) as r:
-        return json.loads(r.read().decode())
-
-
 def get_text(url):
+    import urllib.request
     req = urllib.request.Request(url, headers={"User-Agent": "SONAR-Sync"})
     with urllib.request.urlopen(req, timeout=15) as r:
         return r.read().decode("utf-8")
@@ -57,7 +33,8 @@ def _py_str(value: str) -> str:
 
 def fetch_releases():
     data = get_json(
-        f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases?per_page=100"
+        f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases?per_page=100",
+        agent="SONAR-Sync"
     )
     changelog = []
     for r in data:
