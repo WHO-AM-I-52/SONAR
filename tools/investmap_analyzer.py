@@ -57,12 +57,10 @@ BLOCK2_FIELDS = [
 BLOCK2_MAX = 76
 BLOCK2_WEIGHT = 0.20
 
-# ЗУ-специфичные ключи (активны только если формат = ЗУ)
 BLOCK2_ZU_KEYS = {
     'Свободная площадь ЗУ', 'Кадастровый номер ЗУ',
     'Варианты разрешённого использования', 'Межевание', 'Категория земель',
 }
-# Здание-специфичные ключи
 BLOCK2_BUILDING_KEYS = {
     'Свободная площадь здания', 'Кадастровый номер здания', 'Технические характеристики здания',
 }
@@ -70,7 +68,6 @@ BLOCK2_BUILDING_KEYS = {
 # ---------------------------------------------------------------------------
 # БЛОК 3. ТЕХНИЧЕСКОЕ ПРИСОЕДИНЕНИЕ (вес 30%)
 # ---------------------------------------------------------------------------
-# Структура: (ключ_наличия, [(ключ_атрибута, баллы), ...])
 BLOCK3_RESOURCES = [
     ('Водоснабжение. Наличие', [
         ('Водоснабжение. Наличие',                     4),
@@ -165,10 +162,19 @@ BLOCK5_WEIGHT = 0.20
 # ---------------------------------------------------------------------------
 
 def _find(data: dict, key: str) -> str:
-    """Нечёткий поиск атрибута в data: ищем key как подстроку ключей data (без учёта регистра)."""
+    """Нечёткий поиск: key как подстрока в ключах data (без учёта регистра)."""
     key_lower = key.lower()
     for k, v in data.items():
         if key_lower in k.lower():
+            return v
+    return 'ПУСТО'
+
+
+def _find_exact(data: dict, key: str) -> str:
+    """Точное совпадение ключа (без учёта регистра)."""
+    key_lower = key.lower()
+    for k, v in data.items():
+        if k.lower() == key_lower:
             return v
     return 'ПУСТО'
 
@@ -188,11 +194,10 @@ def _presence_factor(val: str) -> float:
         return 0.5
     if 'нет' in v:
         return 0.0
-    return 1.0  # любое заполненное значение считаем как «есть»
+    return 1.0
 
 
 def _get_format(data: dict) -> str:
-    """Определяет формат площадки: 'ЗУ', 'здание', 'помещение', 'неизвестно'."""
     val = _find(data, 'Формат площадки').lower()
     if 'земельн' in val or 'участок' in val or 'зу' in val:
         return 'ЗУ'
@@ -204,7 +209,6 @@ def _get_format(data: dict) -> str:
 
 
 def _get_status(data: dict) -> str:
-    """Определяет статус площадки: 'свободна', 'реализована', 'иное'."""
     val = _find(data, 'Статус').lower()
     if 'своб' in val:
         return 'свободна'
@@ -214,11 +218,21 @@ def _get_status(data: dict) -> str:
 
 
 def _get_id(data: dict) -> str:
-    """Извлекает идентификатор площадки."""
-    for key in ('Название площадки', 'global_id', 'Код во внешнем источнике'):
+    """
+    Извлекает ID площадки для SMS.
+    Приоритет: global_id (точное совпадение) → Название площадки → Код во внешнем источнике.
+    """
+    # global_id — точное совпадение, чтобы не схватить чужой ключ со словом global
+    val = _find_exact(data, 'global_id')
+    if _is_filled(val):
+        return str(val)
+
+    # Затем название
+    for key in ('Название площадки', 'Код во внешнем источнике'):
         val = _find(data, key)
-        if _is_filled(val) and val != 'ПУСТО':
+        if _is_filled(val):
             return val[:60]
+
     return 'ID не определён'
 
 
@@ -227,12 +241,9 @@ def _get_id(data: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def _score_block1(data: dict) -> tuple[float, list[str]]:
-    """Возвращает (балл 0-100, список незаполненных обязательных полей)."""
     earned = 0
     missing = []
-
     for key, label, required, points in BLOCK1_FIELDS:
-        # Геопривязка: ищем любое из трёх полей координат
         if key == 'Координаты':
             geo_val = (
                 _find(data, 'Координаты (полигон)') +
@@ -242,12 +253,10 @@ def _score_block1(data: dict) -> tuple[float, list[str]]:
             filled = bool(geo_val)
         else:
             filled = _is_filled(_find(data, key))
-
         if filled:
             earned += points
         elif required:
             missing.append(label)
-
     score = round(earned / BLOCK1_MAX * 100)
     return score, missing
 
@@ -257,21 +266,16 @@ def _score_block2(data: dict, fmt: str) -> tuple[float, list[str]]:
     missing = []
     is_zu = fmt == 'ЗУ'
     is_building = fmt in ('здание', 'помещение')
-
     for key, label, required, points in BLOCK2_FIELDS:
-        # Пропускаем неактивные поля в зависимости от формата
         if key in BLOCK2_ZU_KEYS and not is_zu:
             continue
         if key in BLOCK2_BUILDING_KEYS and not is_building:
             continue
-
         filled = _is_filled(_find(data, key))
         if filled:
             earned += points
         elif required:
             missing.append(label)
-
-    # Пересчитываем MAX с учётом активных полей
     active_max = sum(
         p for k, l, r, p in BLOCK2_FIELDS
         if not (k in BLOCK2_ZU_KEYS and not is_zu)
@@ -284,25 +288,20 @@ def _score_block2(data: dict, fmt: str) -> tuple[float, list[str]]:
 def _score_block3(data: dict) -> tuple[float, list[str]]:
     earned = 0
     missing = []
-
     for presence_key, sub_fields in BLOCK3_RESOURCES:
         presence_val = _find(data, presence_key)
         factor = _presence_factor(presence_val)
-
         for field_key, pts in sub_fields:
             if field_key == presence_key:
-                # Поле «Наличие» — умножаем на фактор
                 earned += pts * factor
                 if factor == 0:
                     missing.append(field_key)
             else:
-                # Остальные поля: заполнять обязательно только если factor == 1
                 val = _find(data, field_key)
                 if _is_filled(val):
                     earned += pts
                 elif factor == 1.0:
                     missing.append(field_key)
-
     score = round(earned / BLOCK3_MAX * 100)
     return score, missing
 
@@ -310,14 +309,11 @@ def _score_block3(data: dict) -> tuple[float, list[str]]:
 def _score_block4(data: dict) -> tuple[float, list[str]]:
     earned = 0
     missing = []
-
     for key, label, required, points in BLOCK4_FIELDS:
-        filled = _is_filled(_find(data, key))
-        if filled:
+        if _is_filled(_find(data, key)):
             earned += points
         elif required:
             missing.append(label)
-
     score = round(earned / BLOCK4_MAX * 100)
     return score, missing
 
@@ -325,14 +321,11 @@ def _score_block4(data: dict) -> tuple[float, list[str]]:
 def _score_block5(data: dict) -> tuple[float, list[str]]:
     earned = 0
     missing = []
-
     for key, label, required, points in BLOCK5_FIELDS:
-        filled = _is_filled(_find(data, key))
-        if filled:
+        if _is_filled(_find(data, key)):
             earned += points
         elif required:
             missing.append(label)
-
     score = round(earned / BLOCK5_MAX * 100)
     return score, missing
 
@@ -342,29 +335,10 @@ def _score_block5(data: dict) -> tuple[float, list[str]]:
 # ---------------------------------------------------------------------------
 
 def analyze(data: dict) -> dict:
-    """
-    Принимает dict {атрибут: значение} (вывод investmap_export.convert_excel_to_text).
-    Возвращает dict:
-    {
-        'id':           str,           # идентификатор площадки
-        'format':       str,           # ЗУ / здание / помещение / неизвестно
-        'status':       str,           # свободна / реализована / иное
-        'blocks': {
-            1: {'score': int, 'weight': float, 'contribution': float, 'missing': list[str]},
-            ...
-        },
-        'total':        int,           # итоговый балл 0-100
-        'category':     str,           # 🟢/🟡/🟠/🔴 + описание
-        'ready':        str,           # да / после доработки / нет
-        'all_missing':  list[str],     # полный список незаполненных обязательных полей
-        'sms':          str | None,    # SMS-текст если total < SMS_THRESHOLD, иначе None
-        'signed':       str,           # состояние подписи
-    }
-    """
-    fmt    = _get_format(data)
-    status = _get_status(data)
+    fmt         = _get_format(data)
+    status      = _get_status(data)
     площадка_id = _get_id(data)
-    signed = _find(data, 'Состояние подписи')
+    signed      = _find(data, 'Состояние подписи')
 
     b1, m1 = _score_block1(data)
     b2, m2 = _score_block2(data, fmt)
@@ -372,7 +346,6 @@ def analyze(data: dict) -> dict:
     b4, m4 = _score_block4(data)
     b5, m5 = _score_block5(data)
 
-    # Взвешенный итог
     total = round(
         b1 * BLOCK1_WEIGHT +
         b2 * BLOCK2_WEIGHT +
@@ -381,7 +354,6 @@ def analyze(data: dict) -> dict:
         b5 * BLOCK5_WEIGHT
     )
 
-    # Категория
     if total >= 85:
         category = '🟢 Высокая заполняемость — готова к публикации'
         ready    = 'да'
@@ -397,12 +369,11 @@ def analyze(data: dict) -> dict:
 
     all_missing = m1 + m2 + m3 + m4 + m5
 
-    # SMS (только если < 75% И есть незаполненные обязательные поля)
     sms = None
     if total < SMS_THRESHOLD and all_missing:
         items = '\n'.join(f'- {f}' for f in all_missing)
         sms = (
-            f'Площадка {площадка_id} заполнена на {total}%.\n'
+            f'Площадка ID{площадка_id} заполнена на {total}%.\n'
             f'Просим добавить:\n'
             f'{items}\n'
             f'для увеличения процента заполняемости.'
