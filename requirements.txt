@@ -2,7 +2,6 @@ flask
 openpyxl
 werkzeug
 python-docx
-easyocr
 Pillow
 python-dotenv
 pdfplumber
