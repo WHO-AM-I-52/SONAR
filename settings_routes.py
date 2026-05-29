@@ -4,13 +4,35 @@
 # ║  - смена пароля                                              ║
 # ║  - выбор темы (light/dark/system)                           ║
 # ║  - уведомления на почту вкл/выкл                            ║
+# ║ feat: переключение ветки main/dev (только admin)             ║
 # ╚══════════════════════════════════════════════════════════════╝
 
+import os
+import sys
+import subprocess
+import threading
 from flask import Blueprint, render_template, request, session, redirect, url_for, flash
-from db import get_db
+from db import get_db, BASE_DIR
 from auth_utils import login_required, hash_pw
+from activity_log import log_action
 
 settings_bp = Blueprint('settings', __name__)
+
+BRANCH_FILE  = os.path.join(BASE_DIR, "_branch.txt")
+LOCK_FILE    = os.path.join(BASE_DIR, "_updating.lock")
+RESTART_FLAG = os.path.join(BASE_DIR, "_restart.flag")
+
+
+def _get_active_branch() -> str:
+    """Читает активную ветку из _branch.txt."""
+    if os.path.exists(BRANCH_FILE):
+        try:
+            val = open(BRANCH_FILE, encoding="utf-8").read().strip()
+            if val in ("main", "dev"):
+                return val
+        except Exception:
+            pass
+    return "main"
 
 
 @settings_bp.route('/settings', methods=['GET'])
@@ -23,7 +45,14 @@ def settings():
         (session['user_id'],)
     ).fetchone()
     db.close()
-    return render_template('settings.html', user=user)
+    active_branch   = _get_active_branch()
+    is_switching    = os.path.exists(LOCK_FILE)
+    return render_template(
+        'settings.html',
+        user=user,
+        active_branch=active_branch,
+        is_switching=is_switching,
+    )
 
 
 @settings_bp.route('/settings/password', methods=['POST'])
@@ -76,7 +105,6 @@ def settings_preferences():
         theme = 'light'
 
     db = get_db()
-    # Миграция: добавить колонки если отсутствуют
     cols = [r[1] for r in db.execute('PRAGMA table_info(users)').fetchall()]
     if 'email' not in cols:
         db.execute('ALTER TABLE users ADD COLUMN email TEXT DEFAULT NULL')
@@ -94,4 +122,62 @@ def settings_preferences():
 
     session['theme'] = theme
     flash('Настройки сохранены.', 'success')
+    return redirect(url_for('settings.settings'))
+
+
+@settings_bp.route('/settings/switch-branch', methods=['POST'])
+@login_required
+def switch_branch():
+    """Переключение ветки main/dev. Только для admin."""
+    if session.get('role') != 'admin':
+        flash('Недостаточно прав.', 'error')
+        return redirect(url_for('settings.settings'))
+
+    target = request.form.get('branch', '').strip()
+    if target not in ('main', 'dev'):
+        flash('Недопустимое значение ветки.', 'error')
+        return redirect(url_for('settings.settings'))
+
+    current = _get_active_branch()
+    if target == current:
+        flash(f'Уже активна ветка «{target}».', 'info')
+        return redirect(url_for('settings.settings'))
+
+    # Защита от двойного запуска
+    if os.path.exists(LOCK_FILE):
+        flash('Переключение уже выполняется, подождите.', 'warning')
+        return redirect(url_for('settings.settings'))
+
+    # Создаём lock
+    with open(LOCK_FILE, "w") as f:
+        f.write("switching")
+
+    # Логируем
+    db = get_db()
+    log_action(db, session['user_id'], 'branch_switch', None,
+               f'Переключение ветки: {current} → {target}')
+    db.commit()
+    db.close()
+
+    # Запускаем переключение в фоне — Flask успевает вернуть ответ
+    def _do_switch():
+        switcher = os.path.join(BASE_DIR, "branch_switcher.py")
+        subprocess.run(
+            [sys.executable, switcher, target],
+            cwd=BASE_DIR,
+        )
+        # После завершения _restart.flag уже создан → Flask сам остановится
+        # Посылаем себе сигнал завершения
+        import signal
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    t = threading.Thread(target=_do_switch, daemon=True)
+    t.start()
+
+    branch_label = '🧪 DEV (экспериментальная)' if target == 'dev' else '✅ MAIN (стабильная)'
+    flash(
+        f'Переключение на {branch_label} запущено. '
+        f'Сервер перезапустится автоматически через несколько секунд...',
+        'info'
+    )
     return redirect(url_for('settings.settings'))
