@@ -1,6 +1,6 @@
 # ╔══════════════════════════════════════════════════════════════╗
 # ║ request_routes.py                                            ║
-# ║ v2.3: расчёт overdue_days на сервере в SQL                  ║
+# ║ v2.1: поддержка новых полей МинЭК (предмет, итоги)    ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 from flask import (
@@ -14,27 +14,20 @@ import json
 import math
 
 from dashboard import build_dash
-from db import get_db, UPLOADS_DIR, next_request_number
+from db import get_db, UPLOADS_DIR
 from auth_utils import login_required, admin_required
 from form_utils import build_values, get_classifiers, ALL_FIELDS, REQUIRED_FIELDS
-from validators import allowed_file, _int, validate_inn
+from validators import allowed_file, validate_inn
 from request_history import save_history, get_history, rollback_history
 from activity_log import log_action
 from ocr_utils import extract_anketa_fields
 
 requests_bp = Blueprint('requests', __name__)
 
-PER_PAGE = 25
+PAGE_SIZE = 50
 
-
-# ─── ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ──────────────────────────────────────────────
 
 def _build_filter(sf, df, dt, af, ef, src_f, search, quick, user_id, for_count=False):
-    """Собирает WHERE-часть запроса и параметры для фильтрации списка обращений.
-
-    for_count=True — режим для SELECT COUNT(*), где favorite_flag не вычисляется.
-    for_count=False — режим для основного SELECT, где favorite_flag = CASE WHEN ...
-    """
     where = "WHERE 1=1 "
     params = [user_id]
 
@@ -82,8 +75,6 @@ def _build_filter(sf, df, dt, af, ef, src_f, search, quick, user_id, for_count=F
     return where, params
 
 
-# ─── СПИСОК ОБРАЩЕНИЙ + ФИЛЬТРЫ ─────────────────────────────────────────
-
 @requests_bp.route('/')
 @login_required
 def index():
@@ -97,16 +88,30 @@ def index():
     src_f  = request.args.get('source', '')
     search = request.args.get('search', '').strip()
     quick  = request.args.get('quick', '')
-    page   = max(1, _int(request.args.get('page', '1')) or 1)
+    try:
+        page = max(1, int(request.args.get('page', 1)))
+    except (ValueError, TypeError):
+        page = 1
 
     conn = get_db()
     dash = build_dash(conn, period)
 
     uid = session['user_id']
 
+    where, params = _build_filter(sf, df, dt, af, ef, src_f, search, quick, uid, for_count=False)
+    q = (
+        "SELECT r.*, u.full_name AS employee_name, "
+        "ass.full_name AS assigned_name, "
+        "CASE WHEN f.id IS NULL THEN 0 ELSE 1 END AS favorite_flag "
+        "FROM requests r "
+        "LEFT JOIN users u   ON r.created_by  = u.id "
+        "LEFT JOIN users ass ON r.assigned_to = ass.id "
+        "LEFT JOIN favorites f ON f.request_id = r.id AND f.user_id = ? "
+        f"{where} ORDER BY r.id DESC"
+    )
+
     total_all = conn.execute("SELECT COUNT(*) FROM requests").fetchone()[0]
 
-    # ─── Запрос подсчёта записей с теми же фильтрами ──────────────────
     count_where, count_params = _build_filter(sf, df, dt, af, ef, src_f, search, quick, uid, for_count=True)
     count_q = (
         "SELECT COUNT(*) FROM requests r "
@@ -115,36 +120,14 @@ def index():
         "LEFT JOIN favorites f ON f.request_id = r.id AND f.user_id = ? "
         f"{count_where}"
     )
+
     total_filtered = conn.execute(count_q, count_params).fetchone()[0]
 
-    # ─── Пагинация ────────────────────────────────────────────────────
-    total_pages = max(1, math.ceil(total_filtered / PER_PAGE))
+    total_pages = max(1, math.ceil(total_filtered / PAGE_SIZE))
     page        = min(page, total_pages)
-    offset      = (page - 1) * PER_PAGE
+    offset      = (page - 1) * PAGE_SIZE
 
-    norm_days = dash['kpi']['norm_days']
-
-    # ─── Основной запрос: список обращений с LIMIT/OFFSET ─────────────
-    # overdue_days — количество дней с момента создания (NULL если нет даты).
-    # overdue      — 1 если обращение активное и просрочено, иначе 0.
-    # Оба поля вычисляются на сервере — шаблон не делает арифметику строк.
-    where, params = _build_filter(sf, df, dt, af, ef, src_f, search, quick, uid, for_count=False)
-    q = (
-        "SELECT r.*, u.full_name AS employee_name, "
-        "ass.full_name AS assigned_name, "
-        "CASE WHEN f.id IS NULL THEN 0 ELSE 1 END AS favorite_flag, "
-        f"CAST(julianday('now') - julianday(r.request_date) AS INTEGER) AS overdue_days, "
-        f"CASE WHEN r.status IN ('draft','review','accepted') "
-        f"     AND r.request_date IS NOT NULL "
-        f"     AND julianday('now') - julianday(r.request_date) > {norm_days} "
-        f"THEN 1 ELSE 0 END AS overdue "
-        "FROM requests r "
-        "LEFT JOIN users u   ON r.created_by  = u.id "
-        "LEFT JOIN users ass ON r.assigned_to = ass.id "
-        "LEFT JOIN favorites f ON f.request_id = r.id AND f.user_id = ? "
-        f"{where} ORDER BY r.id DESC LIMIT ? OFFSET ?"
-    )
-    reqs = conn.execute(q, params + [PER_PAGE, offset]).fetchall()
+    reqs = conn.execute(q + f" LIMIT {PAGE_SIZE} OFFSET {offset}", params).fetchall()
 
     employees = conn.execute(
         "SELECT id,full_name FROM users WHERE role IN ('employee','admin','manager') "
@@ -157,8 +140,10 @@ def index():
     active_filter_id = request.args.get('active_filter', '')
     saved_filter_list = []
     for sfr in sf_rows:
-        try:    sp = json.loads(sfr['params'])
-        except: sp = {}
+        try:
+            sp = json.loads(sfr['params'])
+        except Exception:
+            sp = {}
         saved_filter_list.append({
             'id': sfr['id'], 'name': sfr['name'],
             'description': sfr['description'], 'params': sp,
@@ -176,11 +161,9 @@ def index():
         source_types=src_types, dash=dash, today_str=today.isoformat(),
         saved_filter_list=saved_filter_list, active_filter_id=active_filter_id,
         total_all=total_all, total_filtered=total_filtered, active_quick=quick,
-        page=page, total_pages=total_pages, per_page=PER_PAGE,
+        page=page, total_pages=total_pages,
     )
 
-
-# ─── ДАШБОРД ────────────────────────────────────────────────────────────────────────
 
 @requests_bp.route('/dashboard')
 @login_required
@@ -191,8 +174,6 @@ def dashboard():
     conn.close()
     return render_template('dashboard.html', dash=dash)
 
-
-# ─── СОЗДАНИЕ ОБРАЩЕНИЯ ────────────────────────────────────────────────
 
 @requests_bp.route('/request/new', methods=['GET', 'POST'])
 @login_required
@@ -224,7 +205,7 @@ def new_request():
             ext = (ext or '').lower()
             tmp_name = f'_ocr_tmp_anketa{ext}'
             tmp_path = os.path.join(UPLOADS_DIR, tmp_name)
-            msg = ''
+
             try:
                 ocr_file.save(tmp_path)
                 fields, msg = extract_anketa_fields(tmp_path)
@@ -263,7 +244,8 @@ def new_request():
                     'form.html', req=None, today=date.today().isoformat(),
                     legal_forms=lf2, districts=di2, source_types=src2,
                     employees=emp2, required_fields=REQUIRED_FIELDS,
-                    subjects=subjects2, results=results2, ocr_message=msg
+                    subjects=subjects2, results=results2,
+                    ocr_message=msg if 'msg' in locals() else ''
                 )
 
         inn = request.form.get('applicant_inn', '').strip()
@@ -315,8 +297,6 @@ def new_request():
         subjects=subjects, results=results
     )
 
-
-# ─── РЕДАКТИРОВАНИЕ ОБРАЩЕНИЯ ──────────────────────────────────────────
 
 @requests_bp.route('/request/<int:rid>', methods=['GET', 'POST'])
 @login_required
@@ -393,8 +373,6 @@ def edit_request(rid):
     )
 
 
-# ─── ПРОСМОТР ОБРАЩЕНИЯ ────────────────────────────────────────────
-
 @requests_bp.route('/view/<int:rid>')
 @login_required
 def view_request(rid):
@@ -434,8 +412,6 @@ def view_request(rid):
     return render_template('view.html', req=req, employees=employees, okved_name=okved_name)
 
 
-# ─── ИСТОРИЯ ИЗМЕНЕНИЙ ───────────────────────────────────────────────
-
 @requests_bp.route('/view/<int:rid>/history')
 @login_required
 @admin_required
@@ -449,8 +425,6 @@ def request_history_view(rid):
     history = get_history(rid)
     return render_template('history.html', history=history, req=req, rid=rid)
 
-
-# ─── ОТКАТ ──────────────────────────────────────────────────────────────────────
 
 @requests_bp.route('/view/<int:rid>/rollback/<int:hid>', methods=['POST'])
 @login_required
@@ -469,8 +443,6 @@ def rollback_request(rid, hid):
     return redirect(url_for('requests.view_request', rid=rid))
 
 
-# ─── ПОДТВЕРЖДЕНИЕ / ВОЗВРАТ ───────────────────────────────────
-
 @requests_bp.route('/request/<int:rid>/confirm', methods=['POST'])
 @login_required
 @admin_required
@@ -488,8 +460,16 @@ def confirm_request(rid):
 
     if action == 'accept':
         year     = datetime.now().year
-        num      = next_request_number(conn, year)
-        assigned = _int(request.form.get('assigned_to')) or req['assigned_to']
+        count    = conn.execute(
+            "SELECT COUNT(*) FROM requests WHERE status!='draft'"
+        ).fetchone()[0] + 1
+        num      = f"ЗУ-{year}-{count:04d}"
+        assigned = request.form.get('assigned_to') or req['assigned_to']
+        if assigned:
+            try:
+                assigned = int(assigned)
+            except (ValueError, TypeError):
+                assigned = req['assigned_to']
 
         conn.execute(
             "UPDATE requests SET status='accepted', request_number=?, "
@@ -532,8 +512,6 @@ def confirm_request(rid):
     return redirect(url_for('requests.view_request', rid=rid))
 
 
-# ─── ФИКСАЦИЯ ОТВЕТА ────────────────────────────────────────────
-
 @requests_bp.route('/request/<int:rid>/answer', methods=['POST'])
 @login_required
 def answer_request(rid):
@@ -569,8 +547,6 @@ def answer_request(rid):
     return redirect(url_for('requests.view_request', rid=rid))
 
 
-# ─── СМЕНА СТАТУСА ────────────────────────────────────────────────
-
 @requests_bp.route('/request/<int:rid>/status', methods=['POST'])
 @login_required
 def change_status(rid):
@@ -588,8 +564,6 @@ def change_status(rid):
     conn.close()
     return redirect(url_for('requests.view_request', rid=rid))
 
-
-# ─── ИЗБРАННОЕ ──────────────────────────────────────────────────────────────────
 
 @requests_bp.route('/request/<int:rid>/favorite', methods=['POST'])
 @login_required
@@ -612,8 +586,6 @@ def toggle_favorite(rid):
     return redirect(request.referrer or url_for('requests.index'))
 
 
-# ─── УДАЛЕНИЕ ────────────────────────────────────────────────────────────────
-
 @requests_bp.route('/request/<int:rid>/delete', methods=['POST'])
 @login_required
 @admin_required
@@ -634,15 +606,11 @@ def delete_request(rid):
     return redirect(url_for('requests.index'))
 
 
-# ─── ФАЙЛЫ ───────────────────────────────────────────────────────────────────────
-
 @requests_bp.route('/uploads/<path:filename>')
 @login_required
 def uploaded_file(filename):
     return send_file(os.path.join(UPLOADS_DIR, filename), as_attachment=True)
 
-
-# ─── ПРИСВОЕНИЕ НОМЕРА ──────────────────────────────────────────────
 
 @requests_bp.route('/request/<int:rid>/assign_number', methods=['POST'])
 @login_required
@@ -656,8 +624,11 @@ def assign_number(rid):
         flash('Номер уже присвоен или обращение не найдено', 'warning')
         return redirect(url_for('requests.view_request', rid=rid))
 
-    year = datetime.now().year
-    num  = next_request_number(conn, year)
+    year  = datetime.now().year
+    count = conn.execute(
+        "SELECT COUNT(*) FROM requests WHERE request_number IS NOT NULL"
+    ).fetchone()[0] + 1
+    num   = f"ЗУ-{year}-{count:04d}"
 
     conn.execute("UPDATE requests SET request_number=? WHERE id=?", (num, rid))
     log_action(conn, session['user_id'], 'status', rid,

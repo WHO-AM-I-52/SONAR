@@ -5,7 +5,7 @@
 
 from flask import (
     Blueprint, render_template, request,
-    redirect, url_for, session, flash, abort
+    redirect, url_for, session, flash
 )
 from datetime import datetime
 
@@ -16,7 +16,6 @@ auth_bp = Blueprint('auth', __name__)
 
 
 def _log_login(conn, user_id, username, event, ip):
-    """Записывает событие входа/выхода в таблицу login_log."""
     conn.execute(
         "INSERT INTO login_log (user_id, username, event, ip, created_at) "
         "VALUES (?,?,?,?,?)",
@@ -25,8 +24,6 @@ def _log_login(conn, user_id, username, event, ip):
     )
     conn.commit()
 
-
-# ─── ВХОД ──────────────────────────────────────────────────────────────
 
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
@@ -37,14 +34,12 @@ def login():
 
         conn = get_db()
         user = conn.execute(
-            "SELECT * FROM users WHERE username=?",
-            (u,)
+            "SELECT * FROM users WHERE username=?", (u,)
         ).fetchone()
 
         if user and check_pw(user['password'], p):
             must_change = bool(user['must_change_password'])
 
-            # ─── Политика безопасности: если хеш устаревший (SHA-256) ───
             if is_legacy_hash(user['password']):
                 must_change = True
                 conn.execute(
@@ -53,11 +48,7 @@ def login():
                 )
                 conn.commit()
 
-            # ─── Сессия: permanent=True + таймаут бездействия 15 мин ───
-            # PERMANENT_SESSION_LIFETIME задан в app.py, SESSION_REFRESH_EACH_REQUEST=True
-            # — при каждом запросе таймер сбрасывается.
             session.permanent = True
-
             session['user_id']              = user['id']
             session['username']             = user['username']
             session['full_name']            = user['full_name']
@@ -78,7 +69,6 @@ def login():
 
             return redirect(url_for('requests.index'))
 
-        # Неудачная попытка — логируем без user_id
         conn.execute(
             "INSERT INTO login_log (user_id, username, event, ip, created_at) "
             "VALUES (?,?,?,?,?)",
@@ -87,13 +77,10 @@ def login():
         )
         conn.commit()
         conn.close()
-
         flash('Неверный логин или пароль', 'error')
 
     return render_template('login.html')
 
-
-# ─── СМЕНА ПАРОЛЯ ───────────────────────────────────────────────────────
 
 @auth_bp.route('/change-password', methods=['GET', 'POST'])
 def change_password():
@@ -125,8 +112,6 @@ def change_password():
 
     return render_template('change_password.html')
 
-
-# ─── ВЫХОД ──────────────────────────────────────────────────────────────
 
 @auth_bp.route('/logout')
 def logout():
