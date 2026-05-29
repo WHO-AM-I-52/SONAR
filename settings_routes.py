@@ -1,5 +1,12 @@
 # ╔══════════════════════════════════════════════════════════════╗
-# ║ settings_routes.py  feat: switch_branch route (admin only)   ║
+# ║ settings_routes.py                                           ║
+# ║ feat #10: Страница настроек пользователя                    ║
+# ║  - смена пароля                                              ║
+# ║  - выбор темы (light/dark/system)                           ║
+# ║  - уведомления на почту вкл/выкл                            ║
+# ║ feat: переключение ветки main/dev (только admin)            ║
+# ║ fix: LOCK_FILE не утекает, os._exit(42) вместо SIGTERM        ║
+# ║ fix: редирект next после переключения ветки                  ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 import os
@@ -19,6 +26,7 @@ LOCK_FILE    = os.path.join(BASE_DIR, '_updating.lock')
 
 
 def _get_active_branch() -> str:
+    """Reads active branch from _branch.txt (defaults to main)."""
     if os.path.exists(BRANCH_FILE):
         try:
             val = open(BRANCH_FILE, encoding='utf-8').read().strip()
@@ -51,20 +59,25 @@ def settings_password():
     confirm_pw  = request.form.get('confirm_password', '').strip()
 
     if not current_pw or not new_pw or not confirm_pw:
-        flash('Fill all password fields.', 'error')
+        flash('Заполните все поля для смены пароля.', 'error')
         return redirect(url_for('settings.settings'))
+
     if new_pw != confirm_pw:
-        flash('New password and confirmation do not match.', 'error')
+        flash('Новый пароль и подтверждение не совпадают.', 'error')
         return redirect(url_for('settings.settings'))
+
     if len(new_pw) < 6:
-        flash('Password must be at least 6 characters.', 'error')
+        flash('Новый пароль должен содержать не менее 6 символов.', 'error')
         return redirect(url_for('settings.settings'))
 
     db = get_db()
-    user = db.execute('SELECT password FROM users WHERE id = ?', (session['user_id'],)).fetchone()
+    user = db.execute(
+        'SELECT password FROM users WHERE id = ?', (session['user_id'],)
+    ).fetchone()
+
     if not user or user['password'] != hash_pw(current_pw):
         db.close()
-        flash('Current password is incorrect.', 'error')
+        flash('Текущий пароль указан неверно.', 'error')
         return redirect(url_for('settings.settings'))
 
     db.execute(
@@ -73,7 +86,7 @@ def settings_password():
     )
     db.commit()
     db.close()
-    flash('Password changed successfully.', 'success')
+    flash('Пароль успешно изменён.', 'success')
     return redirect(url_for('settings.settings'))
 
 
@@ -102,34 +115,39 @@ def settings_preferences():
     )
     db.commit()
     db.close()
+
     session['theme'] = theme
-    flash('Settings saved.', 'success')
+    flash('Настройки сохранены.', 'success')
     return redirect(url_for('settings.settings'))
 
 
 @settings_bp.route('/settings/switch-branch', methods=['POST'])
 @login_required
 def switch_branch():
+    """Переключает активную ветку (main/dev) и перезапускает сервер."""
+    # next после переключения — куда вернуться
     next_url = request.form.get('next') or url_for('settings.settings')
 
     if session.get('role') != 'admin':
-        flash('Access denied.', 'error')
+        flash('Недостаточно прав.', 'error')
         return redirect(next_url)
 
+    # Защита от двойного запуска
     if os.path.exists(LOCK_FILE):
-        flash('Switch already in progress. Please wait.', 'warning')
+        flash('Переключение уже выполняется. Подождите.', 'warning')
         return redirect(next_url)
 
     target = request.form.get('branch', 'main')
     if target not in ('main', 'dev'):
-        flash('Invalid branch.', 'error')
+        flash('Неверная ветка.', 'error')
         return redirect(next_url)
 
     current = _get_active_branch()
     if target == current:
-        flash(f'Already on branch {target}.', 'info')
+        flash(f'Уже на ветке {target}.', 'info')
         return redirect(next_url)
 
+    # Записываем lock
     try:
         open(LOCK_FILE, 'w').write('switching')
     except Exception:
@@ -146,10 +164,12 @@ def switch_branch():
             stdout=open(os.path.join(BASE_DIR, '_switch.log'), 'w', encoding='utf-8'),
             stderr=subprocess.STDOUT,
         )
+
         with open(RESTART_FLAG, 'w') as f:
             f.write('branch-switch')
 
     except Exception as e:
+        # Откатываем ветку при ошибке
         try:
             with open(BRANCH_FILE, 'w', encoding='utf-8') as f:
                 f.write(current)
@@ -159,18 +179,22 @@ def switch_branch():
             os.remove(LOCK_FILE)
         except Exception:
             pass
-        flash(f'Switch error: {e}', 'error')
+        flash(f'Ошибка при переключении: {e}', 'error')
         return redirect(next_url)
 
-    label = 'DEV' if target == 'dev' else 'main'
-    flash(f'Switching to {label}. Server restarting...', 'success')
+    label = '🧪 DEV' if target == 'dev' else '✅ main'
+    flash(f'Переключение на {label}. Сервер перезапускается...', 'success')
 
     def _shutdown():
         time.sleep(1.5)
+        # Удаляем lock перед завершением — батник чистит папку при старте
         try:
             os.remove(LOCK_FILE)
         except Exception:
             pass
+        # os._exit(42): мгновенно завершает Flask без SIGTERM
+        # работает на Windows и Linux одинаково
+        # run_server.py видит _restart.flag → exit(42) → батник goto :start_server
         os._exit(42)
 
     threading.Thread(target=_shutdown, daemon=True).start()
