@@ -13,7 +13,6 @@
 
 from flask import (Blueprint, render_template, request,
                    redirect, url_for, flash, jsonify, session)
-from datetime import datetime
 from db import get_db
 from auth_utils import login_required, admin_required
 from activity_log import log_action
