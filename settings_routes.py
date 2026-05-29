@@ -2,39 +2,15 @@
 # ║ settings_routes.py                                           ║
 # ║ feat #10: Страница настроек пользователя                    ║
 # ║  - смена пароля                                              ║
-# ║  - выбор темы (light/dark/system)                           ║
+# ║  - выбор темы (light/dark/zone/system)                      ║
 # ║  - уведомления на почту вкл/выкл                            ║
-# ║ feat: переключение ветки main/dev (только admin)            ║
-# ║ fix: LOCK_FILE не утекает, os._exit(42) вместо SIGTERM        ║
-# ║ fix: редирект next после переключения ветки                  ║
 # ╚══════════════════════════════════════════════════════════════╝
 
-import os
-import sys
-import time
-import threading
-import subprocess
 from flask import Blueprint, render_template, request, session, redirect, url_for, flash
-from db import get_db, BASE_DIR
-from auth_utils import login_required, hash_pw
+from db import get_db
+from auth_utils import login_required, hash_pw, check_pw
 
 settings_bp = Blueprint('settings', __name__)
-
-BRANCH_FILE  = os.path.join(BASE_DIR, '_branch.txt')
-RESTART_FLAG = os.path.join(BASE_DIR, '_restart.flag')
-LOCK_FILE    = os.path.join(BASE_DIR, '_updating.lock')
-
-
-def _get_active_branch() -> str:
-    """Reads active branch from _branch.txt (defaults to main)."""
-    if os.path.exists(BRANCH_FILE):
-        try:
-            val = open(BRANCH_FILE, encoding='utf-8').read().strip()
-            if val in ('main', 'dev'):
-                return val
-        except Exception:
-            pass
-    return 'main'
 
 
 @settings_bp.route('/settings', methods=['GET'])
@@ -47,8 +23,7 @@ def settings():
         (session['user_id'],)
     ).fetchone()
     db.close()
-    active_branch = _get_active_branch()
-    return render_template('settings.html', user=user, active_branch=active_branch)
+    return render_template('settings.html', user=user)
 
 
 @settings_bp.route('/settings/password', methods=['POST'])
@@ -75,7 +50,7 @@ def settings_password():
         'SELECT password FROM users WHERE id = ?', (session['user_id'],)
     ).fetchone()
 
-    if not user or user['password'] != hash_pw(current_pw):
+    if not user or not check_pw(user['password'], current_pw):
         db.close()
         flash('Текущий пароль указан неверно.', 'error')
         return redirect(url_for('settings.settings'))
@@ -119,83 +94,3 @@ def settings_preferences():
     session['theme'] = theme
     flash('Настройки сохранены.', 'success')
     return redirect(url_for('settings.settings'))
-
-
-@settings_bp.route('/settings/switch-branch', methods=['POST'])
-@login_required
-def switch_branch():
-    """Переключает активную ветку (main/dev) и перезапускает сервер."""
-    # next после переключения — куда вернуться
-    next_url = request.form.get('next') or url_for('settings.settings')
-
-    if session.get('role') != 'admin':
-        flash('Недостаточно прав.', 'error')
-        return redirect(next_url)
-
-    # Защита от двойного запуска
-    if os.path.exists(LOCK_FILE):
-        flash('Переключение уже выполняется. Подождите.', 'warning')
-        return redirect(next_url)
-
-    target = request.form.get('branch', 'main')
-    if target not in ('main', 'dev'):
-        flash('Неверная ветка.', 'error')
-        return redirect(next_url)
-
-    current = _get_active_branch()
-    if target == current:
-        flash(f'Уже на ветке {target}.', 'info')
-        return redirect(next_url)
-
-    # Записываем lock
-    try:
-        open(LOCK_FILE, 'w').write('switching')
-    except Exception:
-        pass
-
-    try:
-        with open(BRANCH_FILE, 'w', encoding='utf-8') as f:
-            f.write(target)
-
-        updater = os.path.join(BASE_DIR, '_updater.py')
-        subprocess.Popen(
-            [sys.executable, updater],
-            cwd=BASE_DIR,
-            stdout=open(os.path.join(BASE_DIR, '_switch.log'), 'w', encoding='utf-8'),
-            stderr=subprocess.STDOUT,
-        )
-
-        with open(RESTART_FLAG, 'w') as f:
-            f.write('branch-switch')
-
-    except Exception as e:
-        # Откатываем ветку при ошибке
-        try:
-            with open(BRANCH_FILE, 'w', encoding='utf-8') as f:
-                f.write(current)
-        except Exception:
-            pass
-        try:
-            os.remove(LOCK_FILE)
-        except Exception:
-            pass
-        flash(f'Ошибка при переключении: {e}', 'error')
-        return redirect(next_url)
-
-    label = '🧪 DEV' if target == 'dev' else '✅ main'
-    flash(f'Переключение на {label}. Сервер перезапускается...', 'success')
-
-    def _shutdown():
-        time.sleep(1.5)
-        # Удаляем lock перед завершением — батник чистит папку при старте
-        try:
-            os.remove(LOCK_FILE)
-        except Exception:
-            pass
-        # os._exit(42): мгновенно завершает Flask без SIGTERM
-        # работает на Windows и Linux одинаково
-        # run_server.py видит _restart.flag → exit(42) → батник goto :start_server
-        os._exit(42)
-
-    threading.Thread(target=_shutdown, daemon=True).start()
-    return redirect(next_url)
