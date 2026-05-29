@@ -54,7 +54,6 @@
     background: #dee2e6;
   }
 
-  /* ── панель обновления ── */
   #updatePanel { transition: border-color .3s; }
   #updatePanel.has-update { border-left-color: #198754 !important; }
   #updatePanel.no-update  { border-left-color: #6c757d !important; }
@@ -78,7 +77,6 @@
   @keyframes spinOnce { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
   .spin { animation: spinOnce .7s linear infinite; display:inline-block; }
 
-  /* ── таймер до следующей автопроверки ── */
   #nextCheckInfo {
     font-size: 11px;
     color: #6c757d;
@@ -118,7 +116,6 @@
 {% if session.get('role') == 'admin' %}
 <div id="updatePanel" class="card mb-3 p-3" style="border-left:4px solid #adb5bd">
   <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
-
     <div style="min-width:0">
       <div class="fw-bold" style="font-size:14px" id="updateTitle">
         <i class="bi bi-cloud-arrow-down me-1" style="color:#1B5E7B"></i>
@@ -129,7 +126,6 @@
         Проверяем обновления…
       </div>
     </div>
-
     <div class="d-flex flex-column align-items-end gap-1 flex-shrink-0">
       <div class="d-flex gap-2">
         <button id="btnCheck" class="btn btn-sm btn-outline-secondary" onclick="updCheck(true)">
@@ -144,9 +140,7 @@
         Следующая автопроверка через <span id="nextCheckCountdown">—</span>
       </div>
     </div>
-
   </div>
-
   <div id="updateLogWrap" class="mt-2 d-none">
     <pre id="updateLogPre"></pre>
   </div>
@@ -179,6 +173,7 @@
         <form method="POST" action="{{ url_for('settings.switch_branch') }}"
               onsubmit="return confirm('Переключиться на экспериментальную ветку dev?\nСервер перезапустится автоматически (~5-15 сек).')">
           <input type="hidden" name="branch" value="dev">
+          <input type="hidden" name="next" value="{{ url_for('misc.changelog') }}">
           <button type="submit" class="btn btn-sm btn-outline-warning">
             <i class="bi bi-arrow-repeat me-1"></i> Переключиться на 🧪 DEV
           </button>
@@ -187,6 +182,7 @@
         <form method="POST" action="{{ url_for('settings.switch_branch') }}"
               onsubmit="return confirm('Вернуться на стабильную ветку main?\nСервер перезапустится автоматически (~5-15 сек).')">
           <input type="hidden" name="branch" value="main">
+          <input type="hidden" name="next" value="{{ url_for('misc.changelog') }}">
           <button type="submit" class="btn btn-sm btn-outline-success">
             <i class="bi bi-arrow-repeat me-1"></i> Вернуться на ✅ STABLE (main)
           </button>
@@ -214,7 +210,6 @@
 
 <div style="max-width:760px">
 
-  {# ── 1. Спойлер: история версий ── #}
   {% if changelog|length > 1 %}
   <details class="mb-3">
     <summary>
@@ -242,7 +237,6 @@
   </details>
   {% endif %}
 
-  {# ── 2. Текущая версия ── #}
   {% if changelog %}
   {% set cur = changelog[0] %}
   <div class="card mb-3 version-current">
@@ -263,10 +257,8 @@
   </div>
   {% endif %}
 
-  {# ── разделитель ── #}
   <div class="timeline-divider">в планах</div>
 
-  {# ── 3. Следующая версия ── #}
   {% if next_item %}
   <div class="card mb-3 version-next">
     <div class="card-header d-flex justify-content-between align-items-center">
@@ -289,7 +281,6 @@
   </div>
   {% endif %}
 
-  {# ── 4. Спойлер: будущие планы ── #}
   {% if future_items %}
   <details class="mb-3">
     <summary>
@@ -334,7 +325,6 @@
   var _logPre         = document.getElementById('updateLogPre');
   var _countdown      = document.getElementById('nextCheckCountdown');
   var _UPD_CACHE      = 'sonar_upd_status';
-
   var AUTO_CHECK_HOURS = [12, 17];
 
   function _nextCheckTarget() {
@@ -361,10 +351,7 @@
         _autoCheckFired = true;
         _countdown.textContent = '00:00:00';
         updCheck(true);
-        setTimeout(function() {
-          _nextTarget = _nextCheckTarget();
-          _autoCheckFired = false;
-        }, 3000);
+        setTimeout(function() { _nextTarget = _nextCheckTarget(); _autoCheckFired = false; }, 3000);
       }
       return;
     }
@@ -445,47 +432,32 @@
   }
 
   function updApply() {
-    if (!confirm(
-      'Применить обновление?\n\nСервер автоматически перезапустится — пользователи получат кратковременный разрыв (~5-15 сек).'
-    )) return;
+    if (!confirm('Применить обновление?\n\nСервер автоматически перезапустится — пользователи получат кратковременный разрыв (~5-15 сек).')) return;
     _btnUpdate.disabled = true;
     _btnCheck.disabled  = true;
     _btnUpdate.innerHTML = '<span class="spin"><i class="bi bi-arrow-repeat"></i></span> Обновляем…';
     sessionStorage.removeItem(_UPD_CACHE);
-    _updSetStatus(
-      '<span class="spin"><i class="bi bi-arrow-repeat"></i></span> Скачиваем и применяем обновление… Сервер скоро перезапустится.',
-      'progress'
-    );
+    _updSetStatus('<span class="spin"><i class="bi bi-arrow-repeat"></i></span> Скачиваем и применяем обновление… Сервер скоро перезапустится.', 'progress');
     fetch('/api/update/apply', {method: 'POST', credentials: 'same-origin'})
       .then(function(r){ return r.json(); })
       .then(function(data){
         if (data.ok) {
-          _updSetStatus(
-            '<i class="bi bi-check-circle-fill me-1 text-success"></i>' +
-            'Обновление запущено. Сервер перезапускается, страница обновится автоматически…',
-            'ok'
-          );
-          var attempts = 0;
-          var maxAttempts = 30;
+          _updSetStatus('<i class="bi bi-check-circle-fill me-1 text-success"></i>Обновление запущено. Сервер перезапускается, страница обновится автоматически…', 'ok');
+          var attempts = 0, maxAttempts = 30;
           var pollTimer = setInterval(function(){
             attempts++;
             fetch('/ping', {cache: 'no-store', credentials: 'same-origin'})
               .then(function(r){
                 if (r.ok) {
                   clearInterval(pollTimer);
-                  _updSetStatus(
-                    '<i class="bi bi-check-circle-fill me-1 text-success"></i>Обновление завершено! Перезагрузка…',
-                    'ok'
-                  );
+                  _updSetStatus('<i class="bi bi-check-circle-fill me-1 text-success"></i>Обновление завершено! Перезагрузка…', 'ok');
                   setTimeout(function(){ location.reload(); }, 800);
                 }
-              })
-              .catch(function(){});
+              }).catch(function(){});
             if (attempts >= maxAttempts) {
               clearInterval(pollTimer);
               _updSetStatus('<i class="bi bi-exclamation-triangle-fill me-1 text-warning"></i>Ожидание перезапуска истекло. Обновите страницу вручную.', 'error');
-              _btnCheck.disabled  = false;
-              _btnUpdate.disabled = false;
+              _btnCheck.disabled = false; _btnUpdate.disabled = false;
               _btnUpdate.innerHTML = '<i class="bi bi-cloud-arrow-down-fill"></i> Обновить сейчас';
             }
           }, 2000);
@@ -494,16 +466,12 @@
           _btnCheck.disabled = false;
         } else {
           _updSetStatus('<i class="bi bi-x-circle-fill me-1 text-danger"></i>Ошибка: ' + (data.error || 'неизвестно'), 'error');
-          _btnCheck.disabled  = false;
-          _btnUpdate.disabled = false;
+          _btnCheck.disabled = false; _btnUpdate.disabled = false;
           _btnUpdate.innerHTML = '<i class="bi bi-cloud-arrow-down-fill"></i> Обновить сейчас';
         }
       })
       .catch(function(){
-        _updSetStatus(
-          '<span class="spin"><i class="bi bi-arrow-repeat"></i></span> Сервер перезапускается…',
-          'progress'
-        );
+        _updSetStatus('<span class="spin"><i class="bi bi-arrow-repeat"></i></span> Сервер перезапускается…', 'progress');
         var t = setInterval(function(){
           fetch('/ping', {cache: 'no-store', credentials: 'same-origin'})
             .then(function(r){ if (r.ok) { clearInterval(t); location.reload(); } })
