@@ -116,7 +116,7 @@
 
 {# ── Панель обновления (only admin) ── #}
 {% if session.get('role') == 'admin' %}
-<div id="updatePanel" class="card mb-4 p-3" style="border-left:4px solid #adb5bd">
+<div id="updatePanel" class="card mb-3 p-3" style="border-left:4px solid #adb5bd">
   <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
 
     <div style="min-width:0">
@@ -149,6 +149,50 @@
 
   <div id="updateLogWrap" class="mt-2 d-none">
     <pre id="updateLogPre"></pre>
+  </div>
+</div>
+
+{# ── Панель переключения ветки (only admin) ── #}
+<div class="card mb-4 p-3" style="border-left:4px solid {% if active_branch == 'dev' %}#ffc107{% else %}#198754{% endif %}">
+  <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
+    <div>
+      <div class="fw-bold" style="font-size:14px">
+        <i class="bi bi-git me-1" style="color:#1B5E7B"></i>
+        Версия системы
+        {% if active_branch == 'dev' %}
+          <span class="badge bg-warning text-dark ms-1">🧪 DEV</span>
+        {% else %}
+          <span class="badge bg-success ms-1">✅ STABLE</span>
+        {% endif %}
+      </div>
+      <div class="text-muted mt-1" style="font-size:12px">
+        {% if active_branch == 'dev' %}
+          <i class="bi bi-exclamation-triangle-fill text-warning me-1"></i>
+          Экспериментальная ветка — возможны нестабильные изменения
+        {% else %}
+          Стабильная ветка. Рекомендуется для работы.
+        {% endif %}
+      </div>
+    </div>
+    <div class="flex-shrink-0">
+      {% if active_branch == 'main' %}
+        <form method="POST" action="{{ url_for('settings.switch_branch') }}"
+              onsubmit="return confirm('Переключиться на экспериментальную ветку dev?\nСервер перезапустится автоматически (~5-15 сек).')">
+          <input type="hidden" name="branch" value="dev">
+          <button type="submit" class="btn btn-sm btn-outline-warning">
+            <i class="bi bi-arrow-repeat me-1"></i> Переключиться на 🧪 DEV
+          </button>
+        </form>
+      {% else %}
+        <form method="POST" action="{{ url_for('settings.switch_branch') }}"
+              onsubmit="return confirm('Вернуться на стабильную ветку main?\nСервер перезапустится автоматически (~5-15 сек).')">
+          <input type="hidden" name="branch" value="main">
+          <button type="submit" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-arrow-repeat me-1"></i> Вернуться на ✅ STABLE (main)
+          </button>
+        </form>
+      {% endif %}
+    </div>
   </div>
 </div>
 {% endif %}
@@ -291,38 +335,32 @@
   var _countdown      = document.getElementById('nextCheckCountdown');
   var _UPD_CACHE      = 'sonar_upd_status';
 
-  // ── Расписание автопроверок: 12:00 и 17:00 ──────────────────────────────
   var AUTO_CHECK_HOURS = [12, 17];
 
-  // Возвращает ближайший момент автопроверки (Date)
   function _nextCheckTarget() {
     var now = new Date();
     var candidates = AUTO_CHECK_HOURS.map(function(h) {
       var t = new Date(now);
       t.setHours(h, 0, 0, 0);
-      if (t <= now) t.setDate(t.getDate() + 1); // уже прошло — следующий день
+      if (t <= now) t.setDate(t.getDate() + 1);
       return t;
     });
     return candidates.reduce(function(a, b) { return a < b ? a : b; });
   }
 
   var _nextTarget = _nextCheckTarget();
-  var _autoCheckFired = false; // защита от двойного срабатывания в одну секунду
+  var _autoCheckFired = false;
 
-  // ── Тикающий счётчик ────────────────────────────────────────────────────
   function _pad(n) { return n < 10 ? '0' + n : '' + n; }
 
   function _tickCountdown() {
     var now  = new Date();
     var diff = _nextTarget - now;
-
     if (diff <= 0) {
-      // Время пришло — запускаем автопроверку один раз
       if (!_autoCheckFired) {
         _autoCheckFired = true;
         _countdown.textContent = '00:00:00';
         updCheck(true);
-        // Сдвигаем цель на следующий период
         setTimeout(function() {
           _nextTarget = _nextCheckTarget();
           _autoCheckFired = false;
@@ -330,7 +368,6 @@
       }
       return;
     }
-
     var totalSec = Math.floor(diff / 1000);
     var hh = Math.floor(totalSec / 3600);
     var mm = Math.floor((totalSec % 3600) / 60);
@@ -338,11 +375,9 @@
     _countdown.textContent = _pad(hh) + ':' + _pad(mm) + ':' + _pad(ss);
   }
 
-  // Запускаем счётчик сразу и затем каждую секунду
   _tickCountdown();
   setInterval(_tickCountdown, 1000);
 
-  // ── Вспомогательные функции панели ──────────────────────────────────────
   function _updSetStatus(html, type) {
     _updStatus.innerHTML = html;
     _updPanel.className = _updPanel.className
@@ -388,23 +423,15 @@
     if (data.output) _updShowLog(data.output);
   }
 
-  // force=true — сбрасывает браузерный sessionStorage и серверный кэш (?force=1)
   function updCheck(force) {
     if (force) sessionStorage.removeItem(_UPD_CACHE);
-
     var cached = null;
     try { cached = JSON.parse(sessionStorage.getItem(_UPD_CACHE)); } catch(e){}
-    if (cached && !force) {
-      _updRenderResult(cached);
-      return;
-    }
-
+    if (cached && !force) { _updRenderResult(cached); return; }
     _btnCheck.disabled = true;
     _btnUpdate.classList.add('d-none');
     _updSetStatus('<span class="spin"><i class="bi bi-arrow-repeat"></i></span> Проверяем…', 'loading');
-
     var url = force ? '/api/update/check?force=1' : '/api/update/check';
-
     fetch(url, {credentials: 'same-origin'})
       .then(function(r){ return r.json(); })
       .then(function(data){
@@ -421,7 +448,6 @@
     if (!confirm(
       'Применить обновление?\n\nСервер автоматически перезапустится — пользователи получат кратковременный разрыв (~5-15 сек).'
     )) return;
-
     _btnUpdate.disabled = true;
     _btnCheck.disabled  = true;
     _btnUpdate.innerHTML = '<span class="spin"><i class="bi bi-arrow-repeat"></i></span> Обновляем…';
@@ -430,7 +456,6 @@
       '<span class="spin"><i class="bi bi-arrow-repeat"></i></span> Скачиваем и применяем обновление… Сервер скоро перезапустится.',
       'progress'
     );
-
     fetch('/api/update/apply', {method: 'POST', credentials: 'same-origin'})
       .then(function(r){ return r.json(); })
       .then(function(data){
@@ -464,12 +489,11 @@
               _btnUpdate.innerHTML = '<i class="bi bi-cloud-arrow-down-fill"></i> Обновить сейчас';
             }
           }, 2000);
-
         } else if (data.error === 'already_in_progress') {
           _updSetStatus('<i class="bi bi-hourglass-split me-1 text-warning"></i>Обновление уже выполняется, подождите…', 'progress');
           _btnCheck.disabled = false;
         } else {
-          _updSetStatus('<i class="bi bi-x-circle-fill me-1 text-danger\"></i>Ошибка: ' + (data.error || 'неизвестно'), 'error');
+          _updSetStatus('<i class="bi bi-x-circle-fill me-1 text-danger"></i>Ошибка: ' + (data.error || 'неизвестно'), 'error');
           _btnCheck.disabled  = false;
           _btnUpdate.disabled = false;
           _btnUpdate.innerHTML = '<i class="bi bi-cloud-arrow-down-fill"></i> Обновить сейчас';
@@ -488,7 +512,6 @@
       });
   }
 
-  // Автопроверка при загрузке страницы — берёт кэш если есть
   updCheck(false);
 </script>
 {% endif %}
