@@ -17,7 +17,7 @@ from activity_log import log_action
 report_bp = Blueprint('report', __name__)
 
 
-# ─── ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ────────────────────────────────────────────────────
+# ─── ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ───────────────────────────────────────────────────────────
 
 def _short_fio(full_name: str) -> str:
     if not full_name:
@@ -77,7 +77,7 @@ def _contact_cell(person: str, phone: str, email: str) -> str:
     return '\n'.join(parts) if parts else '—'
 
 
-# ─── СТАНДАРТНАЯ ВЫГРУЗКА ─────────────────────────────────────────────────────────────
+# ─── СТАНДАРТНАЯ ВЫГРУЗКА ───────────────────────────────────────────────────────────────────
 
 @report_bp.route('/report')
 @login_required
@@ -200,7 +200,7 @@ def report():
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
-# ─── ЕЖЕНЕДЕЛЬНАЯ ВЫГРУЗКА ДЛЯ МИНЭК ───────────────────────────────────────────────
+# ─── ЕЖЕНЕДЕЛЬНАЯ ВЫГРУЗКА ДЛЯ МИНЭК ───────────────────────────────────────────────────────
 
 @report_bp.route('/report/minek')
 @login_required
@@ -274,8 +274,7 @@ def report_minek():
         'Дата обращения',
         'Наименование компании',
         'Наименование проекта',
-        'Объем инвестиций,
-млрд рублей',
+        'Объем инвестиций,\nмлрд рублей',
         'Рабочие места',
         'Предмет обращения',
         'Дата направления презентации',
@@ -389,7 +388,7 @@ def report_minek():
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
-# ─── ПОЛНАЯ ВЫГРУЗКА БАЗЫ (для дозаполнения и импорта) ─────────────────────────────
+# ─── ПОЛНАЯ ВЫГРУЗКА БАЗЫ (для дозаполнения и импорта) ───────────────────────────────────────────────
 
 @report_bp.route('/export/full')
 @login_required
@@ -482,7 +481,7 @@ def export_full():
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
-# ─── ИМПОРТ ОБНОВЛЁННОГО EXCEL ────────────────────────────────────────────────────────
+# ─── ИМПОРТ ОБНОВЛЁННОГО EXCEL ────────────────────────────────────────────────────────────────────
 
 @report_bp.route('/import/full', methods=['POST'])
 @login_required
@@ -618,7 +617,7 @@ def import_full():
     return jsonify({'updated': updated, 'skipped': skipped, 'errors': errors})
 
 
-# ─── AUTOSAVE / WAL CHECKPOINT ─────────────────────────────────────────────────────────────
+# ─── AUTOSAVE / WAL CHECKPOINT ──────────────────────────────────────────────────────────────────────────────────
 
 @report_bp.route('/autosave', methods=['POST'])
 @login_required
