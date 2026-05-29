@@ -1,21 +1,44 @@
+import urllib.request
 import json
 import re
 import os
 from datetime import datetime
-from github_utils import load_token, get_headers, get_json
 
 REPO_OWNER = "WHO-AM-I-52"
 REPO_NAME = "SONAR"
 BRANCH = "main"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CHANGELOG_PATH = os.path.join(BASE_DIR, "changelog.py")
-ROADMAP_PATH = os.path.join(BASE_DIR, "roadmap.py")
+
+
+def load_token():
+    env_path = os.path.join(BASE_DIR, ".env")
+    if os.path.exists(env_path):
+        with open(env_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("GITHUB_TOKEN="):
+                    return line.split("=", 1)[1].strip()
+    return None
+
 
 TOKEN = load_token()
 
 
+def _headers():
+    h = {"User-Agent": "SONAR-Sync", "Accept": "application/vnd.github+json"}
+    if TOKEN:
+        h["Authorization"] = f"Bearer {TOKEN}"
+    return h
+
+
+def get_json(url):
+    req = urllib.request.Request(url, headers=_headers())
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return json.loads(r.read().decode())
+
+
 def get_text(url):
-    import urllib.request
     req = urllib.request.Request(url, headers={"User-Agent": "SONAR-Sync"})
     with urllib.request.urlopen(req, timeout=15) as r:
         return r.read().decode("utf-8")
@@ -33,8 +56,7 @@ def _py_str(value: str) -> str:
 
 def fetch_releases():
     data = get_json(
-        f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases?per_page=100",
-        agent="SONAR-Sync"
+        f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases?per_page=100"
     )
     changelog = []
     for r in data:
@@ -65,11 +87,10 @@ def fetch_roadmap():
     roadmap = []
 
     STATUS_MAP = {
-        "В работе":      "in_progress",
-        "Запланировано": "planned",
-        "Идеи":          "idea",
-        "Реализовано":   "done",
-        "Готово":        "done",
+        "\u0412 работе":      "in_progress",
+        "\u0417апланировано": "planned",
+        "\u0418деи":          "idea",
+        "\u0420еализовано":   "done",
     }
 
     current_status = "planned"
@@ -110,8 +131,8 @@ def fetch_roadmap():
     return roadmap
 
 
-def write_changelog(changelog):
-    """Записывает только CHANGELOG в changelog.py."""
+def write_changelog(changelog, roadmap):
+    """Генерирует changelog.py с корректным экранированием строк через repr()."""
     lines = ["CHANGELOG = [\n"]
     for entry in changelog:
         lines.append("    {\n")
@@ -122,21 +143,13 @@ def write_changelog(changelog):
             lines.append(f'            {_py_str(c)},\n')
         lines.append("        ],\n")
         lines.append("    },\n")
-    lines.append("]\n")
+    lines.append("]\n\n")
 
-    with open(CHANGELOG_PATH, "w", encoding="utf-8") as f:
-        f.writelines(lines)
-
-
-def write_roadmap(roadmap):
-    """Записывает только ROADMAP в roadmap.py."""
-    lines = ["ROADMAP = [\n"]
+    lines.append("ROADMAP = [\n")
     for entry in roadmap:
         lines.append("    {\n")
-        lines.append(f'        "version": {_py_str(entry.get("version", ""))},\n')
         lines.append(f'        "title": {_py_str(entry["title"])},\n')
         lines.append(f'        "status": {_py_str(entry["status"])},\n')
-        lines.append(f'        "eta": {_py_str(entry.get("eta", ""))},\n')
         lines.append('        "points": [\n')
         for p in entry["points"]:
             lines.append(f'            {_py_str(p)},\n')
@@ -144,7 +157,7 @@ def write_roadmap(roadmap):
         lines.append("    },\n")
     lines.append("]\n")
 
-    with open(ROADMAP_PATH, "w", encoding="utf-8") as f:
+    with open(CHANGELOG_PATH, "w", encoding="utf-8") as f:
         f.writelines(lines)
 
 
@@ -168,12 +181,8 @@ def main():
                          "date": e["date"],
                          "changes": e["changes"]} for e in existing]
 
-        write_changelog(releases)
+        write_changelog(releases, roadmap)
         print("  changelog.py обновлён.")
-
-        write_roadmap(roadmap)
-        print("  roadmap.py обновлён.")
-
     except Exception as e:
         print(f"  [ОШИБКА] {e}")
 
