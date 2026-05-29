@@ -1,5 +1,15 @@
 # phonebook_routes.py
 # Blueprint: телефонный справочник (v2.1.0)
+# Маршруты:
+#   GET  /phonebook                — список сотрудников с поиском
+#   POST /phonebook/add            — добавить сотрудника (админ)
+#   POST /phonebook/edit           — редактировать сотрудника (админ)
+#   POST /phonebook/delete         — удалить сотрудника (админ)
+#   GET  /phonebook/orgs           — список организаций (админ)
+#   POST /phonebook/orgs/add       — добавить организацию (админ)
+#   POST /phonebook/orgs/edit      — редактировать организацию (админ)
+#   POST /phonebook/orgs/delete    — удалить организацию (админ)
+#   GET  /phonebook/org_address    — AJAX: получить адрес организации
 
 from flask import (Blueprint, render_template, request,
                    redirect, url_for, flash, jsonify, session)
