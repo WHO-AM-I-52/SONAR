@@ -8,16 +8,15 @@
 
 import urllib.request
 import urllib.error
+import json
+import os
+import sys
 import zipfile
 import shutil
-import hashlib
-import json
-import subprocess
-import sys
-import os
-import re
+import tempfile
 import ast
-import time
+import re
+from datetime import datetime
 
 REPO_OWNER    = "WHO-AM-I-52"
 REPO_NAME     = "SONAR"
@@ -43,63 +42,78 @@ BRANCH = load_branch()
 BAT_NAME = "start SONAR.bat"
 
 # update.bat намеренно НЕ защищён — обновляется автоматически как обычный файл
-PROTECTED_FILES = {
-    "database.db",
-    "database_backup.db",
-    "_secret.key",
-    "_last_commit.txt",
-    "_update_available.json",
-    "_updating.lock",
-    "_restart.flag",
-    "_branch.txt",
-    ".env",
-    BAT_NAME,
-}
+# _updater.py защищён — самообновление небезопасно во время работы
+PROTECTED_DIRS  = {"uploads", "reports", "WPy", "Bacup", "db"}
+PROTECTED_FILES = {"_updater.py", ".env"}
+
+SPINNER = ["||", "|/", "--", "\\/"]
 
 
-def get_token() -> str | None:
+def should_skip(rel_path: str) -> bool:
+    p    = rel_path.replace("\\", "/").strip("/")
+    top  = p.split("/")[0]
+    base = os.path.basename(p)
+    if top in PROTECTED_DIRS or top in PROTECTED_FILES:
+        return True
+    if base in {"database.db", "database.db-wal", "database.db-shm"}:
+        return True
+    if "__pycache__" in p or p.endswith(".pyc"):
+        return True
+    return False
+
+
+def load_token():
     env_path = os.path.join(BASE_DIR, ".env")
-    token = os.environ.get("GITHUB_TOKEN")
-    if not token and os.path.exists(env_path):
-        try:
-            with open(env_path, encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith("GITHUB_TOKEN="):
-                        token = line.split("=", 1)[1].strip()
-                        break
-        except Exception:
-            pass
-    return token
+    if os.path.exists(env_path):
+        with open(env_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("GITHUB_TOKEN="):
+                    return line.split("=", 1)[1].strip()
+    return None
 
+TOKEN = load_token()
 
-def gh_headers() -> dict:
-    token = get_token()
+def _headers():
     h = {"User-Agent": "SONAR-Updater", "Accept": "application/vnd.github+json"}
-    if token:
-        h["Authorization"] = f"Bearer {token}"
+    if TOKEN:
+        h["Authorization"] = f"Bearer {TOKEN}"
     return h
 
+def get_json(url):
+    req = urllib.request.Request(url, headers=_headers())
+    with urllib.request.urlopen(req, timeout=30) as r:
+        data = json.loads(r.read().decode())
+        show_rate_limit(r.headers)
+        return data
 
-def get_json(url: str) -> dict:
-    req = urllib.request.Request(url, headers=gh_headers())
-    with urllib.request.urlopen(req, timeout=20) as r:
-        return json.loads(r.read().decode())
-
+def post_json(url, payload):
+    body = json.dumps(payload).encode("utf-8")
+    req  = urllib.request.Request(
+        url, data=body,
+        headers={**_headers(), "Content-Type": "application/json"},
+        method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return r.status, json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read().decode())
 
 def show_rate_limit(headers):
-    remaining = headers.get("x-ratelimit-remaining", "?")
-    limit     = headers.get("x-ratelimit-limit",     "?")
-    reset_ts  = headers.get("x-ratelimit-reset")
-    reset_str = None
+    remaining = headers.get("X-RateLimit-Remaining")
+    limit     = headers.get("X-RateLimit-Limit")
+    reset_ts  = headers.get("X-RateLimit-Reset")
+    if remaining is None:
+        return
+    reset_str = ""
     if reset_ts:
         try:
-            from datetime import datetime
-            reset_str = datetime.fromtimestamp(int(reset_ts)).strftime("%H:%M:%S")
+            reset_str = datetime.fromtimestamp(int(reset_ts)).strftime("%H:%M")
         except Exception:
             pass
-    print(f"  [GitHub API] лимит запросов: {remaining}/{limit}"
-          + (f" (сброс в {reset_str})" if reset_str else ""))
+    print(f"  Лимит API: {remaining}/{limit} осталось" +
+          (f" (сброс в {reset_str})" if reset_str else ""))
 
 
 # ─── Список коммитов между двумя SHA ────────────────────────────────────────
@@ -129,37 +143,26 @@ def get_commits_between(local_sha: str, remote_sha: str) -> list:
 
 def get_remote_sha() -> str | None:
     try:
-        url = f"{API_BASE}/git/refs/heads/{BRANCH}"
-        req = urllib.request.Request(url, headers=gh_headers())
-        with urllib.request.urlopen(req, timeout=20) as r:
-            show_rate_limit(r.headers)
-            data = json.loads(r.read().decode())
-        sha = data.get("object", {}).get("sha")
-        print(f"  Последний коммит GitHub: {sha[:12] if sha else 'N/A'}")
-        return sha
-    except urllib.error.HTTPError as e:
-        print(f"  [Ошибка] GitHub API: HTTP {e.code}")
-        return None
+        data = get_json(f"{API_BASE}/commits/{BRANCH}")
+        return data.get("sha", "")
     except Exception as e:
-        print(f"  [Ошибка] Не удалось получить SHA: {e}")
+        print(f"  [ОШИБКА] Не удалось получить SHA с GitHub: {e}")
         return None
 
-
-def get_local_sha() -> str | None:
+def load_local_sha() -> str:
     if os.path.exists(COMMIT_FILE):
         try:
             return open(COMMIT_FILE, encoding="utf-8").read().strip()
         except Exception:
             pass
-    return None
-
+    return ""
 
 def save_local_sha(sha: str):
     try:
         with open(COMMIT_FILE, "w", encoding="utf-8") as f:
             f.write(sha)
     except Exception as e:
-        print(f"  [Предупреждение] Не удалось сохранить SHA: {e}")
+        print(f"  [Внимание] Не удалось сохранить SHA: {e}")
 
 
 def check_for_updates() -> int:
@@ -169,18 +172,32 @@ def check_for_updates() -> int:
     print("  ================================================")
     print()
     print("  Подключаемся к GitHub...")
+    if TOKEN:
+        print("  Токен найден — лимит 5000 запросов/час")
+    else:
+        print("  Токен не найден — лимит 60 запросов/час")
+    print()
+
     remote_sha = get_remote_sha()
-    if not remote_sha:
-        print("  Не удалось получить данные с GitHub.")
+    if remote_sha is None:
         return 2
-    local_sha = get_local_sha()
-    print(f"  Установленная версия:  {local_sha[:12] if local_sha else 'неизвестна'}")
-    print(f"  GitHub версия: {remote_sha[:12]}")
-    if local_sha and remote_sha.startswith(local_sha) or local_sha == remote_sha:
-        print("  Установлена актуальная версия.")
+
+    local_sha = load_local_sha()
+
+    if not local_sha:
+        print("  Локальная версия не определена — рекомендуется скачать архив обновления.")
+        print(f"  Последний коммит GitHub: {remote_sha[:12]}...")
+        return 1
+
+    if remote_sha == local_sha:
+        print(f"  Актуальная версия: {remote_sha[:12]}...")
+        print("  Обновлений нет.")
         return 0
-    print("  Доступно обновление!")
-    return 1
+    else:
+        print(f"  Локальная версия : {local_sha[:12]}...")
+        print(f"  GitHub версия    : {remote_sha[:12]}...")
+        print("  Доступны обновления!")
+        return 1
 
 
 # ─── Размер архива ───────────────────────────────────────────────────────────
@@ -188,50 +205,55 @@ def check_for_updates() -> int:
 def get_zip_size_kb() -> int:
     url = f"{API_BASE}/zipball/{BRANCH}"
     try:
-        req = urllib.request.Request(url, headers=gh_headers(), method="HEAD")
-        with urllib.request.urlopen(req, timeout=10) as r:
+        req = urllib.request.Request(url, headers=_headers(), method="HEAD")
+        with urllib.request.urlopen(req, timeout=15) as r:
             cl = r.headers.get("Content-Length")
-            if cl:
+            if cl and int(cl) > 0:
                 return int(cl) // 1024
     except Exception:
         pass
     try:
-        req2 = urllib.request.Request(url, headers=gh_headers())
-        with urllib.request.urlopen(req2, timeout=10) as r:
-            cl = r.headers.get("Content-Length")
-            if cl:
-                return int(cl) // 1024
+        req = urllib.request.Request(API_BASE, headers=_headers())
+        with urllib.request.urlopen(req, timeout=15) as r:
+            data = json.loads(r.read().decode())
+            size_kb = data.get("size", 0)
+            if size_kb > 0:
+                return max(int(size_kb * 0.65), 50)
     except Exception:
         pass
     return FALLBACK_KB
 
 
-SPINNER = ["|  ", " | ", "  |"]
-
-
 def _print_progress(downloaded: int, estimated_kb: int, spinner_idx: int):
-    dl_kb = downloaded // 1024
-    if estimated_kb > 0:
-        pct = min(100, int(dl_kb * 100 / estimated_kb))
-        bar = "#" * (pct // 5) + "-" * (20 - pct // 5)
-        line = f"  {SPINNER[spinner_idx % 3]} Скачано: {dl_kb} КБ / ~{estimated_kb} КБ  [{bar}] {pct}%"
+    size_kb = downloaded // 1024
+    if estimated_kb > 0 and downloaded <= estimated_kb * 1024:
+        pct    = downloaded / (estimated_kb * 1024) * 100
+        filled = int(pct / 5)
+        bar    = "█" * filled + "░" * (20 - filled)
+        print(f"  [{bar}] {pct:4.0f}%  {size_kb} / ~{estimated_kb} КБ", end="\r", flush=True)
     else:
-        line = f"  {SPINNER[spinner_idx % 3]} Скачано: {dl_kb} КБ"
-    print(f"\r{line}", end="", flush=True)
+        spin = SPINNER[spinner_idx % len(SPINNER)]
+        print(f"  [{spin}] Скачано: {size_kb} КБ...", end="\r", flush=True)
 
 
 def download_zip(zip_path: str):
     print(f"  Определяем размер архива обновления (ветка: {BRANCH})...")
     estimated_kb = get_zip_size_kb()
     print(f"  Ожидаемый размер архива: ~{estimated_kb} КБ")
+
     url = f"{API_BASE}/zipball/{BRANCH}"
-    req = urllib.request.Request(url, headers=gh_headers())
-    try:
-        with urllib.request.urlopen(req, timeout=60) as r, open(zip_path, "wb") as f:
-            chunk_size   = 8192
-            downloaded   = 0
-            spinner_idx  = 0
-            last_print   = time.monotonic()
+    req = urllib.request.Request(url, headers=_headers())
+    print("  Скачиваем архив обновления...")
+    with urllib.request.urlopen(req, timeout=60) as r:
+        show_rate_limit(r.headers)
+        cl = r.headers.get("Content-Length")
+        if cl and int(cl) > 0:
+            estimated_kb = int(cl) // 1024
+            print(f"  Точный размер архива: {estimated_kb} КБ")
+        downloaded  = 0
+        spinner_idx = 0
+        chunk_size  = 8192
+        with open(zip_path, "wb") as f:
             while True:
                 chunk = r.read(chunk_size)
                 if not chunk:
@@ -239,77 +261,74 @@ def download_zip(zip_path: str):
                 f.write(chunk)
                 downloaded  += len(chunk)
                 spinner_idx += 1
-                now = time.monotonic()
-                if now - last_print > 0.15:
-                    _print_progress(downloaded, estimated_kb, spinner_idx)
-                    last_print = now
-        print()
-        print(f"  Архив скачан: {downloaded // 1024} КБ")
-    except urllib.error.HTTPError as e:
-        print(f"\n  [Ошибка] HTTP {e.code} при скачивании архива")
-        raise
-    except Exception as e:
-        print(f"\n  [Ошибка] {e}")
-        raise
+                _print_progress(downloaded, estimated_kb, spinner_idx)
+    print()
+    size_kb = os.path.getsize(zip_path) // 1024
+    print(f"  Архив обновления скачан: {size_kb} КБ")
 
 
-PROTECTED_EXTENSIONS = {".db", ".key", ".env", ".lock", ".flag"}
+def extract_and_apply(zip_path: str):
+    """Распаковывает архив, копирует только изменившиеся файлы."""
+    updated     = 0
+    unchanged   = 0
+    skipped     = 0
+    bat_updated = False
 
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        print("  Распаковываем архив обновления...")
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            zf.extractall(tmp_dir)
 
-def should_skip(rel_path: str) -> bool:
-    name = os.path.basename(rel_path)
-    if name in PROTECTED_FILES:
-        return True
-    _, ext = os.path.splitext(name)
-    if ext in PROTECTED_EXTENSIONS:
-        return True
-    # Пропускаем папку uploads и reports
-    parts = rel_path.replace("\\", "/").split("/")
-    if "uploads" in parts or "reports" in parts:
-        return True
-    return False
+        entries = os.listdir(tmp_dir)
+        if not entries:
+            print("  [ОШИБКА] Архив пустой.")
+            return 0, 0, 0, False
+        repo_root = os.path.join(tmp_dir, entries[0])
 
+        print("  Применяем обновления...")
+        for dirpath, dirnames, filenames in os.walk(repo_root):
+            rel_dir = os.path.relpath(dirpath, repo_root)
 
-def apply_zip(zip_path: str, dest_dir: str) -> str | None:
-    """Распаковывает обновление из zip в dest_dir.
-    Возвращает SHA нового коммита (из имени корневой папки архива) или None."""
-    new_sha = None
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        names = zf.namelist()
-        if not names:
-            print("  [Ошибка] Пустой архив")
-            return None
-        root_prefix = names[0]  # WHO-AM-I-52-SONAR-<sha>/
-        # Извлекаем SHA из имени папки
-        try:
-            new_sha = root_prefix.rstrip("/").split("-")[-1]
-        except Exception:
-            pass
+            for fname in filenames:
+                if rel_dir == ".":
+                    rel_path = fname
+                else:
+                    rel_path = os.path.join(rel_dir, fname)
 
-        total   = len(names)
-        updated = 0
-        skipped = 0
-        print(f"  Применяем обновление... (файлов в архиве: {total})")
-        for member in names:
-            rel = member[len(root_prefix):]
-            if not rel:
-                continue
-            if should_skip(rel):
-                skipped += 1
-                continue
-            target = os.path.join(dest_dir, rel)
-            if member.endswith("/"):
-                os.makedirs(target, exist_ok=True)
-            else:
-                os.makedirs(os.path.dirname(target), exist_ok=True)
-                with zf.open(member) as src, open(target, "wb") as dst:
-                    shutil.copyfileobj(src, dst)
+                rel_path_fwd = rel_path.replace("\\", "/")
+
+                if should_skip(rel_path_fwd):
+                    skipped += 1
+                    continue
+
+                src  = os.path.join(dirpath, fname)
+                dest = os.path.join(BASE_DIR, rel_path)
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+
+                new_content = open(src, "rb").read()
+                old_content = b""
+                if os.path.exists(dest):
+                    old_content = open(dest, "rb").read()
+
+                if new_content == old_content:
+                    print(f"  [--] {rel_path_fwd}")
+                    unchanged += 1
+                    continue
+
+                shutil.copy2(src, dest)
                 updated += 1
-    print(f"  Обновлено файлов: {updated}, пропущено защищённых: {skipped}")
-    return new_sha
+
+                if rel_path_fwd == BAT_NAME:
+                    bat_updated = True
+                    print(f"  [OK] {rel_path_fwd} (ОБНОВЛЕН)")
+                else:
+                    print(f"  [OK] {rel_path_fwd}")
+
+    return updated, unchanged, skipped, bat_updated
 
 
 def load_changelog():
+    """Читает changelog.py без exec() — использует ast.literal_eval для безопасного парсинга."""
     changelog_path = os.path.join(BASE_DIR, "changelog.py")
     if not os.path.exists(changelog_path):
         return None, None
@@ -325,19 +344,18 @@ def load_changelog():
         if not cl:
             return None, None
 
-        latest = cl[0]
-        version = latest.get("version", "").strip()
-        items   = latest.get("items",   [])
-        body    = "\n".join(f"- {item}" for item in items) if items else ""
-        return version, body or f"Release {version}"
+        latest  = cl[0]
+        version = latest.get("version", "")
+        body    = "\n".join(f"- {c}" for c in latest.get("changes", []))
+        return version, body
+
     except Exception as e:
-        print(f"  [Предупреждение] Не удалось прочитать changelog.py: {e}")
+        print(f"  [Внимание] Не удалось прочитать changelog.py: {e}")
         return None, None
 
 
 def ensure_github_release():
-    token = get_token()
-    if not token:
+    if not TOKEN:
         print("  [Релиз] Токен не найден — автосоздание релиза пропущено.")
         return
 
@@ -353,35 +371,34 @@ def ensure_github_release():
 
     tag = f"v{version}"
     try:
-        existing_url = f"{API_BASE}/releases/tags/{tag}"
-        req = urllib.request.Request(existing_url, headers=gh_headers())
-        with urllib.request.urlopen(req, timeout=10):
+        req = urllib.request.Request(
+            f"{API_BASE}/releases/tags/{tag}", headers=_headers()
+        )
+        with urllib.request.urlopen(req, timeout=15):
             print(f"  [Релиз] {tag} уже существует — пропуск.")
             return
     except urllib.error.HTTPError as e:
         if e.code != 404:
-            print(f"  [Релиз] Ошибка проверки существующего релиза: {e.code}")
+            print(f"  [Релиз] Ошибка проверки: {e.code}")
             return
 
-    payload = json.dumps({
-        "tag_name":         tag,
-        "target_commitish": "main",
-        "name":             f"SONAR {tag}",
-        "body":             body,
-        "draft":            False,
-        "prerelease":       False,
-    }).encode()
-
-    headers = {**gh_headers(), "Content-Type": "application/json"}
-    try:
-        req = urllib.request.Request(
-            f"{API_BASE}/releases", data=payload, headers=headers, method="POST"
-        )
-        with urllib.request.urlopen(req, timeout=15) as r:
-            resp = json.loads(r.read().decode())
-        print(f"  [Релиз] Создан: {resp.get('html_url', '')}")
-    except Exception as e:
-        print(f"  [Релиз] Ошибка создания: {e}")
+    print(f"  [Релиз] Создаю {tag} на GitHub...")
+    status, resp = post_json(
+        f"{API_BASE}/releases",
+        {
+            "tag_name":         tag,
+            "target_commitish": BRANCH,
+            "name":             tag,
+            "body":             body,
+            "draft":            False,
+            "prerelease":       False,
+        }
+    )
+    if status == 201:
+        print(f"  [Релиз] {tag} успешно создан: {resp.get('html_url', '')}")
+    else:
+        msg = resp.get("message", "неизвестная ошибка")
+        print(f"  [Релиз] Не удалось создать {tag}: {msg}")
 
 
 def run_sync_changelog():
@@ -390,103 +407,76 @@ def run_sync_changelog():
     if not os.path.exists(sync_path):
         print("  [Changelog] sync_changelog.py не найден — пропуск.")
         return
+    print("  Синхронизация changelog с GitHub...")
     try:
-        result = subprocess.run(
-            [sys.executable, sync_path],
-            cwd=BASE_DIR,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if result.returncode == 0:
-            print("  [Changelog] Синхронизация выполнена.")
-        else:
-            print(f"  [Changelog] Ошибка: {result.stderr[-200:]}")
+        import importlib.util
+        spec   = importlib.util.spec_from_file_location("sync_changelog", sync_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.main()
     except Exception as e:
-        print(f"  [Changelog] Не удалось запустить sync_changelog.py: {e}")
+        print(f"  [Changelog] Ошибка синхронизации: {e}")
 
 
 def main():
-    is_check = "--check" in sys.argv
-    print()
-    print("  ================================================")
-    print("   SONAR - Менеджер обновлений")
-    print("  ================================================")
-    print()
+    if "--check" in sys.argv:
+        code = check_for_updates()
+        sys.exit(code)
 
-    token = get_token()
-    if token:
+    print("  Подключаемся к GitHub...")
+    if TOKEN:
         print("  Токен найден — лимит 5000 запросов/час")
     else:
         print("  Токен не найден — лимит 60 запросов/час")
     print(f"  Активная ветка: {BRANCH}")
 
     remote_sha = get_remote_sha()
-    if not remote_sha:
-        print("  Нет соединения с GitHub или ошибка API.")
-        sys.exit(2)
 
-    local_sha = get_local_sha()
-    print(f"  Установленная версия:  {local_sha[:12] if local_sha else 'неизвестна'}")
-    print(f"  GitHub версия: {remote_sha[:12]}")
+    zip_path = os.path.join(BASE_DIR, "_sonar_update.zip")
+
+    try:
+        download_zip(zip_path)
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            reset_ts  = e.headers.get("X-RateLimit-Reset")
+            reset_str = ""
+            if reset_ts:
+                try:
+                    reset_str = datetime.fromtimestamp(int(reset_ts)).strftime("%H:%M")
+                except Exception:
+                    pass
+            print(f"  [ОШИБКА] Rate limit исчерпан." +
+                  (f" Сброс в {reset_str}." if reset_str else " Подожди и повтори."))
+        else:
+            print(f"  [ОШИБКА] {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"  [ОШИБКА] Не удалось скачать архив обновления: {e}")
+        sys.exit(1)
+
+    apply_ok = False
+    try:
+        updated, unchanged, skipped, bat_updated = extract_and_apply(zip_path)
+        apply_ok = True
+    except Exception as e:
+        print(f"  [ОШИБКА] Не удалось применить обновление: {e}")
+        sys.exit(1)
+    finally:
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+            print("  Архив обновления удалён.")
+
+    if apply_ok and remote_sha:
+        save_local_sha(remote_sha)
+        print(f"  Версия сохранена: {remote_sha[:12]}...")
+
+    print()
+    print(f"  Обновлено файлов     : {updated}")
+    print(f"  Без изменений        : {unchanged}")
+    print(f"  Пропущено (защита)   : {skipped}")
     print()
 
-    if local_sha and (remote_sha.startswith(local_sha) or local_sha == remote_sha):
-        print("  Установлена актуальная версия.")
-        if is_check:
-            sys.exit(0)
-    else:
-        print("  Доступно обновление!")
-        if is_check:
-            print("  Используйте интерфейс SONAR или update.bat для обновления.")
-            sys.exit(1)
-
-    # ── Скачивание и применение ──────────────────────────────────────────────
-    lock_path = os.path.join(BASE_DIR, "_updating.lock")
-    if os.path.exists(lock_path):
-        print("  Обновление уже выполняется (lock-файл найден).")
-        sys.exit(2)
-
-    try:
-        open(lock_path, "w").write("updating")
-    except Exception:
-        pass
-
-    zip_path = os.path.join(BASE_DIR, "_update.zip")
-    bat_updated = False
-
-    try:
-        print("  Скачиваем архив обновления...")
-        download_zip(zip_path)
-
-        print("  Проверяем содержимое архива...")
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            names = zf.namelist()
-        bat_in_zip = any(os.path.basename(n) == BAT_NAME for n in names)
-        if bat_in_zip:
-            bat_updated = True
-
-        print("  Распаковываем обновление...")
-        new_sha = apply_zip(zip_path, BASE_DIR)
-
-        if new_sha:
-            save_local_sha(new_sha)
-            print(f"  Новая версия: {new_sha[:12]}")
-        else:
-            save_local_sha(remote_sha)
-
-        ensure_github_release()
-
-    finally:
-        try:
-            os.remove(zip_path)
-        except Exception:
-            pass
-        try:
-            os.remove(lock_path)
-        except Exception:
-            pass
-
+    ensure_github_release()
     run_sync_changelog()
 
     print()
@@ -494,11 +484,11 @@ def main():
 
     if bat_updated:
         print()
-        print(f"  Обнаружено обновление {BAT_NAME}.")
-        print("  Для применения изменений запускового скрипта перезапустите сервер вручную.")
+        print("  [!] start SONAR.bat был обновлён.")
+        print("  [!] Закрой это окно и запусти start SONAR.bat заново вручную.")
+        print()
+        sys.exit(2)
 
 
 if __name__ == "__main__":
-    if "--check" in sys.argv:
-        sys.exit(check_for_updates())
     main()
