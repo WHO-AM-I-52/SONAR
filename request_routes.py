@@ -11,6 +11,7 @@ from datetime import datetime, date
 from werkzeug.utils import secure_filename
 import os
 import json
+import math
 
 from dashboard import build_dash
 from db import get_db, UPLOADS_DIR
@@ -22,6 +23,8 @@ from activity_log import log_action
 from ocr_utils import extract_anketa_fields
 
 requests_bp = Blueprint('requests', __name__)
+
+PAGE_SIZE = 50
 
 
 # ─── ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ──────────────────────────────────────────
@@ -95,6 +98,10 @@ def index():
     src_f  = request.args.get('source', '')
     search = request.args.get('search', '').strip()
     quick  = request.args.get('quick', '')
+    try:
+        page = max(1, int(request.args.get('page', 1)))
+    except (ValueError, TypeError):
+        page = 1
 
     conn = get_db()
     dash = build_dash(conn, period)
@@ -127,7 +134,13 @@ def index():
     )
 
     total_filtered = conn.execute(count_q, count_params).fetchone()[0]
-    reqs = conn.execute(q, params).fetchall()
+
+    # ─── Пагинация ──────────────────────────────────────────────────────
+    total_pages = max(1, math.ceil(total_filtered / PAGE_SIZE))
+    page        = min(page, total_pages)
+    offset      = (page - 1) * PAGE_SIZE
+
+    reqs = conn.execute(q + f" LIMIT {PAGE_SIZE} OFFSET {offset}", params).fetchall()
 
     employees = conn.execute(
         "SELECT id,full_name FROM users WHERE role IN ('employee','admin','manager') "
@@ -161,6 +174,7 @@ def index():
         source_types=src_types, dash=dash, today_str=today.isoformat(),
         saved_filter_list=saved_filter_list, active_filter_id=active_filter_id,
         total_all=total_all, total_filtered=total_filtered, active_quick=quick,
+        page=page, total_pages=total_pages,
     )
 
 
@@ -506,7 +520,7 @@ def confirm_request(rid):
         log_action(conn, session['user_id'], 'accept', rid,
                    f'Принято в работу, номер: {num}, ответственный ID={assigned}')
         conn.commit()
-        flash(f'Принято в работу, номеက: {num}', 'success')
+        flash(f'Принято в работу, номер: {num}', 'success')
 
     elif action == 'reject':
         conn.execute(
@@ -572,7 +586,7 @@ def answer_request(rid):
 def change_status(rid):
     ns = request.form.get('status')
     if ns not in ('draft', 'review', 'accepted', 'answered'):
-        flash('Неверный статуခ', 'error')
+        flash('Неверный статус', 'error')
         return redirect(url_for('requests.view_request', rid=rid))
     conn = get_db()
     conn.execute(
