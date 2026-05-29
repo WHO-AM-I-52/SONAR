@@ -16,6 +16,7 @@ auth_bp = Blueprint('auth', __name__)
 
 
 def _log_login(conn, user_id, username, event, ip):
+    """Записывает событие входа/выхода в таблицу login_log."""
     conn.execute(
         "INSERT INTO login_log (user_id, username, event, ip, created_at) "
         "VALUES (?,?,?,?,?)",
@@ -24,6 +25,8 @@ def _log_login(conn, user_id, username, event, ip):
     )
     conn.commit()
 
+
+# ─── ВХОД ───────────────────────────────────────────────────────────────
 
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
@@ -34,12 +37,14 @@ def login():
 
         conn = get_db()
         user = conn.execute(
-            "SELECT * FROM users WHERE username=?", (u,)
+            "SELECT * FROM users WHERE username=?",
+            (u,)
         ).fetchone()
 
         if user and check_pw(user['password'], p):
             must_change = bool(user['must_change_password'])
 
+            # ─── Политика безопасности: если хеш устаревший (SHA-256) ───
             if is_legacy_hash(user['password']):
                 must_change = True
                 conn.execute(
@@ -48,7 +53,9 @@ def login():
                 )
                 conn.commit()
 
+            # ─── Сессия: permanent=True + таймаут бездействия 15 мин ───
             session.permanent = True
+
             session['user_id']              = user['id']
             session['username']             = user['username']
             session['full_name']            = user['full_name']
@@ -77,10 +84,13 @@ def login():
         )
         conn.commit()
         conn.close()
+
         flash('Неверный логин или пароль', 'error')
 
     return render_template('login.html')
 
+
+# ─── СМЕНА ПАРОЛЯ ────────────────────────────────────────────────
 
 @auth_bp.route('/change-password', methods=['GET', 'POST'])
 def change_password():
@@ -112,6 +122,8 @@ def change_password():
 
     return render_template('change_password.html')
 
+
+# ─── ВЫХОД ──────────────────────────────────────────────────────────
 
 @auth_bp.route('/logout')
 def logout():
