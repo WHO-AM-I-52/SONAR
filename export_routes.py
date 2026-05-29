@@ -1,7 +1,7 @@
-# ╔══════════════════════════════════════════════════════════════╗
-# ║                       export_routes.py                       ║
-# ║  v2.6: +export/full (полная выгрузка), +import/full (импорт) ║
-# ╚══════════════════════════════════════════════════════════════╝
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║                       export_routes.py                                       ║
+# ║  v2.7: права can_export_full / can_import_full вместо role==admin            ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
 
 from flask import Blueprint, request, send_file, jsonify, session
 from datetime import datetime, date, timedelta
@@ -11,7 +11,7 @@ from openpyxl.utils import get_column_letter
 import os
 
 from db import get_db, REPORTS_DIR
-from auth_utils import login_required
+from auth_utils import login_required, get_user_perm
 from activity_log import log_action
 
 report_bp = Blueprint('report', __name__)
@@ -36,17 +36,15 @@ def _std_border(color='CCCCCC'):
 
 
 def _hex_to_argb(hex_color: str) -> str:
-    """'#RRGGBB', 'RRGGBB', '#AARRGGBB' → 'FFRRGGBB' (ARGB без #)."""
     c = hex_color.lstrip('#').upper() if hex_color else ''
     if len(c) == 6:
         return 'FF' + c
     if len(c) == 8:
         return c
-    return ''   # пустая — значит не красить
+    return ''
 
 
 def _fmt_date(iso) -> str:
-    """Преобразует 'YYYY-MM-DD' или datetime → 'ДД.ММ.ГГГГ'."""
     if not iso:
         return '—'
     if isinstance(iso, (date, datetime)):
@@ -184,7 +182,6 @@ def report():
     fp = os.path.join(REPORTS_DIR, fn)
     wb.save(fp)
 
-    # ── Журнал ──
     log_parts = []
     if df or dt:
         log_parts.append(f"период: {_fmt_date(df)} – {_fmt_date(dt)}")
@@ -294,7 +291,6 @@ def report_minek():
     ws.row_dimensions[3].height = 40
 
     for ri, r in enumerate(rows, 4):
-        # Цвет строки: result_color хранится как 'RRGGBB' (без #)
         argb = _hex_to_argb(r['result_color']) if r['result_color'] else ''
         if argb:
             rfill = PatternFill('solid', fgColor=argb)
@@ -339,7 +335,6 @@ def report_minek():
 
     ws.freeze_panes = 'B4'
 
-    # ── Лист 2: справочник ──
     wl = wb.create_sheet(title='Справочник')
     wl.merge_cells('A1:C1')
     wl['A1'].value     = 'Легенда цветов (итоги работы по обращению)'
@@ -381,7 +376,6 @@ def report_minek():
     fp = os.path.join(REPORTS_DIR, fn)
     wb.save(fp)
 
-    # ── Журнал ──
     detail = f"период: {_fmt_date(df)} – {_fmt_date(dt)}; всего {len(rows)} обращ."
     try:
         log_action(conn, session['user_id'], 'export_minek', detail=detail)
@@ -394,11 +388,14 @@ def report_minek():
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
-# ─── ПОЛНАЯ ВЫГРУЗКА БАЗЫ (для дозаполнения и импорта) ────────────────────
+# ─── ПОЛНАЯ ВЫГРУЗКА БАЗЫ (для дозаполнения и импорта) ─────────────────────
 
 @report_bp.route('/export/full')
 @login_required
 def export_full():
+    if not get_user_perm('can_export_full'):
+        return jsonify({'error': 'Недостаточно прав: Скачать полную базу (Excel)'}), 403
+
     conn = get_db()
     rows = conn.execute("""
         SELECT r.*,
@@ -416,10 +413,10 @@ def export_full():
     ws = wb.active
     ws.title = 'База обращений'
 
-    hfill = PatternFill("solid", fgColor="1B5E7B")
-    hfont = Font(bold=True, color="FFFFFF", size=10)
-    id_fill = PatternFill("solid", fgColor="2E4057")  # тёмный фон для ID-колонки
-    br    = _std_border()
+    hfill   = PatternFill("solid", fgColor="1B5E7B")
+    id_fill = PatternFill("solid", fgColor="2E4057")
+    hfont   = Font(bold=True, color="FFFFFF", size=10)
+    br      = _std_border()
 
     COLS = [
         ('id',                   'ID (не менять)'),
@@ -459,10 +456,6 @@ def export_full():
     ws.row_dimensions[1].height = 36
     ws.freeze_panes = 'A2'
 
-    keys = [r[0] for r in conn.execute('PRAGMA table_info(requests)').fetchall()]
-    # добавляем join-поля
-    extra_keys = ['assigned_name', 'subject_type_name', 'result_type_name']
-
     for ri, r in enumerate(rows, 2):
         row_keys = list(r.keys())
         for ci, (field, _) in enumerate(COLS, 1):
@@ -488,13 +481,13 @@ def export_full():
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
-# ─── ИМПОРТ ОБНОВЛЁННОГО EXCEL ─────────────────────────────────────────────
+# ─── ИМПОРТ ОБНОВЛЁННОГО EXCEL ──────────────────────────────────────────────
 
 @report_bp.route('/import/full', methods=['POST'])
 @login_required
 def import_full():
-    if session.get('role') != 'admin':
-        return jsonify({'error': 'Только для администратора'}), 403
+    if not get_user_perm('can_import_full'):
+        return jsonify({'error': 'Недостаточно прав: Загрузить обновлённый Excel (импорт)'}), 403
 
     file = request.files.get('import_file')
     if not file or not file.filename.endswith('.xlsx'):
@@ -541,7 +534,7 @@ def import_full():
     try:
         id_idx = headers.index('ID (не менять)')
     except ValueError:
-        return jsonify({'error': 'Колонка «ID (не менять)» не найдена. Используйте файл из «Скачать базу (Excel)»'}), 400
+        return jsonify({'error': 'Колонка «ID (не менять)» не найдена. Используйте файл из «Скачать базу»'}), 400
 
     conn = get_db()
 

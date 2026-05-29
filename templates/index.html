@@ -149,12 +149,14 @@
      title="Стандартный отчёт по текущим фильтрам">
     <i class="bi bi-file-earmark-excel me-1"></i>Выгрузить Excel
   </a>
+  {% if session.perm_can_export_full or session.role == 'admin' %}
   <a href="{{ url_for('report.export_full') }}"
      class="btn btn-sm btn-outline-success"
      title="Скачать все обращения со всеми полями. Дозаполните файл и загрузите обратно через кнопку рядом.">
     <i class="bi bi-download me-1"></i>Скачать базу (Excel)
   </a>
-  {% if session.role == 'admin' %}
+  {% endif %}
+  {% if session.perm_can_import_full or session.role == 'admin' %}
   <button class="btn btn-sm btn-outline-warning"
           data-bs-toggle="modal" data-bs-target="#importModal"
           title="Загрузить дозаполненный Excel. Обновляются только заполненные ячейки. Используйте файл из 'Скачать базу'.">
@@ -199,7 +201,6 @@
       </td></tr>
       {% endif %}
       {% for r in requests %}
-      {# overdue вычислен на сервере в SQL — булево поле 0/1 #}
       <tr class="{{ 'table-danger' if r.overdue else '' }}"
           data-preview-id="{{ r.id }}"
           data-status="{{ r.status }}"
@@ -304,7 +305,7 @@
 </div>
 
 {# ===== МОДАЛЬНОЕ ОКНО ИМПОРТА ===== #}
-{% if session.role == 'admin' %}
+{% if session.perm_can_import_full or session.role == 'admin' %}
 <div class="modal fade" id="importModal" tabindex="-1" aria-labelledby="importModalLabel" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -328,7 +329,7 @@
             <input class="form-check-input" type="checkbox" name="overwrite" id="overwriteCheck" value="1">
             <label class="form-check-label small" for="overwriteCheck">
               Перезаписывать уже заполненные поля
-              <span class="text-muted">(по умолчанию обновляются только пустые)</span>
+              <span class="text-muted">(по умолчанию — только пустые)</span>
             </label>
           </div>
         </form>
