@@ -57,9 +57,9 @@
 
   /* ── панель обновления ── */
   #updatePanel { transition: border-color .3s; }
-  #updatePanel.has-update { border-left-color: #198754 !important; }
-  #updatePanel.no-update  { border-left-color: #6c757d !important; }
-  #updatePanel.upd-error  { border-left-color: #dc3545 !important; }
+  #updatePanel.has-update  { border-left-color: #198754 !important; }
+  #updatePanel.no-update   { border-left-color: #6c757d !important; }
+  #updatePanel.upd-error   { border-left-color: #dc3545 !important; }
   #updatePanel.in-progress { border-left-color: #ffc107 !important; }
 
   #updateLogPre {
@@ -73,8 +73,54 @@
     white-space: pre-wrap;
     word-break: break-all;
   }
-  body[data-theme="dark"] #updateLogPre  { background:#1e2235; color:#e2e8f0; }
-  body[data-theme="zone"] #updateLogPre  { background:#161712; color:#c8c4a8; }
+  body[data-theme="dark"] #updateLogPre { background:#1e2235; color:#e2e8f0; }
+  body[data-theme="zone"] #updateLogPre { background:#161712; color:#c8c4a8; }
+
+  /* ── список коммитов ── */
+  #commitsWrap {
+    margin-top: 10px;
+    border-top: 1px solid #dee2e6;
+    padding-top: 8px;
+  }
+  #commitsList {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  #commitsList li {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 3px 0;
+    font-size: 12px;
+    border-bottom: 1px dashed #f0f0f0;
+  }
+  #commitsList li:last-child { border-bottom: none; }
+  .commit-sha {
+    font-family: monospace;
+    background: #e9ecef;
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 11px;
+    color: #495057;
+    flex-shrink: 0;
+  }
+  .commit-date {
+    color: #adb5bd;
+    font-size: 10px;
+    flex-shrink: 0;
+  }
+  .commit-msg {
+    color: #212529;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  body[data-theme="dark"] .commit-sha  { background:#2a3050; color:#c8d0e8; }
+  body[data-theme="dark"] .commit-msg  { color:#dde4f0; }
+  body[data-theme="dark"] .commit-date { color:#6677aa; }
+  body[data-theme="zone"] .commit-sha  { background:#232418; color:#c8c4a8; }
+  body[data-theme="zone"] .commit-msg  { color:#c8c4a8; }
 
   @keyframes spinOnce { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
   .spin { animation: spinOnce .7s linear infinite; display:inline-block; }
@@ -120,7 +166,7 @@
 <div id="updatePanel" class="card mb-4 p-3" style="border-left:4px solid #adb5bd">
   <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
 
-    <div style="min-width:0">
+    <div style="min-width:0;flex:1">
       <div class="fw-bold" style="font-size:14px" id="updateTitle">
         <i class="bi bi-cloud-arrow-down me-1" style="color:#1B5E7B"></i>
         Обновление системы
@@ -128,6 +174,14 @@
       <div id="updateStatus" class="text-muted mt-1" style="font-size:12px">
         <span class="spin"><i class="bi bi-arrow-repeat"></i></span>
         Проверяем обновления…
+      </div>
+
+      {# блок коммитов — показывается только если есть обновления #}
+      <div id="commitsWrap" class="d-none">
+        <div class="text-muted mb-1" style="font-size:11px">
+          <i class="bi bi-git me-1"></i>Что изменилось:
+        </div>
+        <ul id="commitsList"></ul>
       </div>
     </div>
 
@@ -326,16 +380,18 @@
 
 {% if session.get('role') == 'admin' %}
 <script>
-  var _updPanel       = document.getElementById('updatePanel');
-  var _updStatus      = document.getElementById('updateStatus');
-  var _btnUpdate      = document.getElementById('btnUpdate');
-  var _btnCheck       = document.getElementById('btnCheck');
-  var _logWrap        = document.getElementById('updateLogWrap');
-  var _logPre         = document.getElementById('updateLogPre');
-  var _countdown      = document.getElementById('nextCheckCountdown');
-  var _UPD_CACHE      = 'sonar_upd_status';
+  var _updPanel    = document.getElementById('updatePanel');
+  var _updStatus   = document.getElementById('updateStatus');
+  var _btnUpdate   = document.getElementById('btnUpdate');
+  var _btnCheck    = document.getElementById('btnCheck');
+  var _logWrap     = document.getElementById('updateLogWrap');
+  var _logPre      = document.getElementById('updateLogPre');
+  var _countdown   = document.getElementById('nextCheckCountdown');
+  var _commitsWrap = document.getElementById('commitsWrap');
+  var _commitsList = document.getElementById('commitsList');
+  var _UPD_CACHE   = 'sonar_upd_status';
 
-  // ── Расписание автопроверок: 12:00 и 17:00 ─────────────────────────
+  // ── Расписание автопроверок: 12:00 и 17:00 ──────────────────────────
   var AUTO_CHECK_HOURS = [12, 17];
 
   function _nextCheckTarget() {
@@ -349,7 +405,7 @@
     return candidates.reduce(function(a, b) { return a < b ? a : b; });
   }
 
-  var _nextTarget = _nextCheckTarget();
+  var _nextTarget     = _nextCheckTarget();
   var _autoCheckFired = false;
 
   function _pad(n) { return n < 10 ? '0' + n : '' + n; }
@@ -357,20 +413,18 @@
   function _tickCountdown() {
     var now  = new Date();
     var diff = _nextTarget - now;
-
     if (diff <= 0) {
       if (!_autoCheckFired) {
         _autoCheckFired = true;
         _countdown.textContent = '00:00:00';
         updCheck(true);
         setTimeout(function() {
-          _nextTarget = _nextCheckTarget();
+          _nextTarget     = _nextCheckTarget();
           _autoCheckFired = false;
         }, 3000);
       }
       return;
     }
-
     var totalSec = Math.floor(diff / 1000);
     var hh = Math.floor(totalSec / 3600);
     var mm = Math.floor((totalSec % 3600) / 60);
@@ -381,6 +435,7 @@
   _tickCountdown();
   setInterval(_tickCountdown, 1000);
 
+  // ── Отрисовка панели статуса ─────────────────────────────────────────
   function _updSetStatus(html, type) {
     _updStatus.innerHTML = html;
     _updPanel.className = _updPanel.className
@@ -397,35 +452,70 @@
     _logWrap.classList.remove('d-none');
   }
 
+  // ── Отрисовка списка коммитов ─────────────────────────────────────────
+  function _updRenderCommits(commits) {
+    _commitsList.innerHTML = '';
+    if (!commits || !commits.length) {
+      _commitsWrap.classList.add('d-none');
+      return;
+    }
+    commits.forEach(function(c) {
+      var li = document.createElement('li');
+      li.innerHTML =
+        '<span class="commit-sha">' + _esc(c.sha) + '</span>' +
+        '<span class="commit-msg" title="' + _esc(c.message) + '">' + _esc(c.message) + '</span>' +
+        (c.date ? '<span class="commit-date">' + _esc(c.date) + '</span>' : '');
+      _commitsList.appendChild(li);
+    });
+    _commitsWrap.classList.remove('d-none');
+  }
+
+  function _esc(s) {
+    return String(s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Основной обработчик ответа /api/update/check ─────────────────────
   function _updRenderResult(data) {
     if (data.has_update) {
       _updSetStatus(
         '<i class="bi bi-arrow-up-circle-fill me-1" style="color:#198754"></i>' +
         '<strong class="text-success">Доступна новая версия на GitHub</strong>' +
-        (data.local_sha ? '<span class="text-muted ms-2" style="font-size:11px">' + data.local_sha + '</span>' : ''),
+        (data.local_sha
+          ? '<span class="text-muted ms-2" style="font-size:11px">' + _esc(data.local_sha) + '</span>'
+          : ''),
         'update'
       );
+      _updRenderCommits(data.commits || []);
       _btnUpdate.classList.remove('d-none');
     } else if (data.status === 0) {
       _updSetStatus(
         '<i class="bi bi-check-circle-fill me-1 text-success"></i>Установлена актуальная версия' +
-        (data.local_sha ? ' <span class="text-muted ms-1" style="font-size:11px">(' + data.local_sha + ')</span>' : '') +
+        (data.local_sha
+          ? ' <span class="text-muted ms-1" style="font-size:11px">(' + _esc(data.local_sha) + ')</span>'
+          : '') +
         (data.cached ? ' <span class="text-muted" style="font-size:10px">• кэш</span>' : ''),
         'ok'
       );
+      _commitsWrap.classList.add('d-none');
       _btnUpdate.classList.add('d-none');
     } else {
       _updSetStatus(
         '<i class="bi bi-exclamation-triangle-fill me-1 text-warning"></i>' +
         'Не удалось проверить' +
-        (data.error ? ' <span class="text-muted" style="font-size:11px">(' + data.error + ')</span>' : ''),
+        (data.error
+          ? ' <span class="text-muted" style="font-size:11px">(' + _esc(data.error) + ')</span>'
+          : ''),
         'error'
       );
+      _commitsWrap.classList.add('d-none');
       _btnUpdate.classList.add('d-none');
     }
     if (data.output) _updShowLog(data.output);
   }
 
+  // ── Проверка обновлений ───────────────────────────────────────────────
   function updCheck(force) {
     if (force) sessionStorage.removeItem(_UPD_CACHE);
 
@@ -438,22 +528,24 @@
 
     _btnCheck.disabled = true;
     _btnUpdate.classList.add('d-none');
+    _commitsWrap.classList.add('d-none');
     _updSetStatus('<span class="spin"><i class="bi bi-arrow-repeat"></i></span> Проверяем…', 'loading');
 
     var url = force ? '/api/update/check?force=1' : '/api/update/check';
 
     fetch(url, {credentials: 'same-origin'})
-      .then(function(r){ return r.json(); })
-      .then(function(data){
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
         try { sessionStorage.setItem(_UPD_CACHE, JSON.stringify(data)); } catch(e){}
         _updRenderResult(data);
       })
-      .catch(function(){
+      .catch(function() {
         _updSetStatus('<i class="bi bi-wifi-off me-1 text-danger"></i>Нет связи с сервером', 'error');
       })
-      .finally(function(){ _btnCheck.disabled = false; });
+      .finally(function() { _btnCheck.disabled = false; });
   }
 
+  // ── Применить обновление ─────────────────────────────────────────────
   function updApply() {
     if (!confirm(
       'Применить обновление?\n\nСервер автоматически перезапустится — пользователи получат кратковременный разрыв (~5-15 сек).'
@@ -462,6 +554,7 @@
     _btnUpdate.disabled = true;
     _btnCheck.disabled  = true;
     _btnUpdate.innerHTML = '<span class="spin"><i class="bi bi-arrow-repeat"></i></span> Обновляем…';
+    _commitsWrap.classList.add('d-none');
     sessionStorage.removeItem(_UPD_CACHE);
     _updSetStatus(
       '<span class="spin"><i class="bi bi-arrow-repeat"></i></span> Скачиваем и применяем обновление… Сервер скоро перезапустится.',
@@ -469,33 +562,36 @@
     );
 
     fetch('/api/update/apply', {method: 'POST', credentials: 'same-origin'})
-      .then(function(r){ return r.json(); })
-      .then(function(data){
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
         if (data.ok) {
           _updSetStatus(
             '<i class="bi bi-check-circle-fill me-1 text-success"></i>' +
             'Обновление запущено. Сервер перезапускается, страница обновится автоматически…',
             'ok'
           );
-          var attempts = 0;
+          var attempts   = 0;
           var maxAttempts = 30;
-          var pollTimer = setInterval(function(){
+          var pollTimer  = setInterval(function() {
             attempts++;
             fetch('/ping', {cache: 'no-store', credentials: 'same-origin'})
-              .then(function(r){
+              .then(function(r) {
                 if (r.ok) {
                   clearInterval(pollTimer);
                   _updSetStatus(
                     '<i class="bi bi-check-circle-fill me-1 text-success"></i>Обновление завершено! Перезагрузка…',
                     'ok'
                   );
-                  setTimeout(function(){ location.reload(); }, 800);
+                  setTimeout(function() { location.reload(); }, 800);
                 }
               })
-              .catch(function(){});
+              .catch(function() {});
             if (attempts >= maxAttempts) {
               clearInterval(pollTimer);
-              _updSetStatus('<i class="bi bi-exclamation-triangle-fill me-1 text-warning"></i>Ожидание перезапуска истекло. Обновите страницу вручную.', 'error');
+              _updSetStatus(
+                '<i class="bi bi-exclamation-triangle-fill me-1 text-warning"></i>Ожидание перезапуска истекло. Обновите страницу вручную.',
+                'error'
+              );
               _btnCheck.disabled  = false;
               _btnUpdate.disabled = false;
               _btnUpdate.innerHTML = '<i class="bi bi-cloud-arrow-down-fill"></i> Обновить сейчас';
@@ -503,24 +599,30 @@
           }, 2000);
 
         } else if (data.error === 'already_in_progress') {
-          _updSetStatus('<i class="bi bi-hourglass-split me-1 text-warning"></i>Обновление уже выполняется, подождите…', 'progress');
+          _updSetStatus(
+            '<i class="bi bi-hourglass-split me-1 text-warning"></i>Обновление уже выполняется, подождите…',
+            'progress'
+          );
           _btnCheck.disabled = false;
         } else {
-          _updSetStatus('<i class="bi bi-x-circle-fill me-1 text-danger\"></i>Ошибка: ' + (data.error || 'неизвестно'), 'error');
+          _updSetStatus(
+            '<i class="bi bi-x-circle-fill me-1 text-danger"></i>Ошибка: ' + (data.error || 'неизвестно'),
+            'error'
+          );
           _btnCheck.disabled  = false;
           _btnUpdate.disabled = false;
           _btnUpdate.innerHTML = '<i class="bi bi-cloud-arrow-down-fill"></i> Обновить сейчас';
         }
       })
-      .catch(function(){
+      .catch(function() {
         _updSetStatus(
           '<span class="spin"><i class="bi bi-arrow-repeat"></i></span> Сервер перезапускается…',
           'progress'
         );
-        var t = setInterval(function(){
+        var t = setInterval(function() {
           fetch('/ping', {cache: 'no-store', credentials: 'same-origin'})
-            .then(function(r){ if (r.ok) { clearInterval(t); location.reload(); } })
-            .catch(function(){});
+            .then(function(r) { if (r.ok) { clearInterval(t); location.reload(); } })
+            .catch(function() {});
         }, 2000);
       });
   }
