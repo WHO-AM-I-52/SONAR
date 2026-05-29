@@ -4,35 +4,33 @@
 # ║  - смена пароля                                              ║
 # ║  - выбор темы (light/dark/system)                           ║
 # ║  - уведомления на почту вкл/выкл                            ║
-# ║ feat: переключение ветки main/dev (только admin)             ║
+# ║ feat: переключение ветки main/dev (только admin)            ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 import os
 import sys
 import subprocess
-import threading
 from flask import Blueprint, render_template, request, session, redirect, url_for, flash
 from db import get_db, BASE_DIR
 from auth_utils import login_required, hash_pw
-from activity_log import log_action
 
 settings_bp = Blueprint('settings', __name__)
 
-BRANCH_FILE  = os.path.join(BASE_DIR, "_branch.txt")
-LOCK_FILE    = os.path.join(BASE_DIR, "_updating.lock")
-RESTART_FLAG = os.path.join(BASE_DIR, "_restart.flag")
+BRANCH_FILE  = os.path.join(BASE_DIR, '_branch.txt')
+RESTART_FLAG = os.path.join(BASE_DIR, '_restart.flag')
+LOCK_FILE    = os.path.join(BASE_DIR, '_updating.lock')
 
 
 def _get_active_branch() -> str:
-    """Читает активную ветку из _branch.txt."""
+    """Читает активную ветку из _branch.txt (по умолчанию main)."""
     if os.path.exists(BRANCH_FILE):
         try:
-            val = open(BRANCH_FILE, encoding="utf-8").read().strip()
-            if val in ("main", "dev"):
+            val = open(BRANCH_FILE, encoding='utf-8').read().strip()
+            if val in ('main', 'dev'):
                 return val
         except Exception:
             pass
-    return "main"
+    return 'main'
 
 
 @settings_bp.route('/settings', methods=['GET'])
@@ -45,14 +43,8 @@ def settings():
         (session['user_id'],)
     ).fetchone()
     db.close()
-    active_branch   = _get_active_branch()
-    is_switching    = os.path.exists(LOCK_FILE)
-    return render_template(
-        'settings.html',
-        user=user,
-        active_branch=active_branch,
-        is_switching=is_switching,
-    )
+    active_branch = _get_active_branch()
+    return render_template('settings.html', user=user, active_branch=active_branch)
 
 
 @settings_bp.route('/settings/password', methods=['POST'])
@@ -101,7 +93,7 @@ def settings_preferences():
     email_notifications = 1 if request.form.get('email_notifications') else 0
     email               = request.form.get('email', '').strip()
 
-    if theme not in ('light', 'dark', 'system'):
+    if theme not in ('light', 'dark', 'zone', 'system'):
         theme = 'light'
 
     db = get_db()
@@ -128,56 +120,72 @@ def settings_preferences():
 @settings_bp.route('/settings/switch-branch', methods=['POST'])
 @login_required
 def switch_branch():
-    """Переключение ветки main/dev. Только для admin."""
+    """Переключает активную ветку (main/dev) и перезапускает сервер."""
     if session.get('role') != 'admin':
         flash('Недостаточно прав.', 'error')
         return redirect(url_for('settings.settings'))
 
-    target = request.form.get('branch', '').strip()
+    # Защита от двойного запуска
+    if os.path.exists(LOCK_FILE):
+        flash('Переключение уже выполняется. Подождите.', 'warning')
+        return redirect(url_for('settings.settings'))
+
+    target = request.form.get('branch', 'main')
     if target not in ('main', 'dev'):
-        flash('Недопустимое значение ветки.', 'error')
+        flash('Неверная ветка.', 'error')
         return redirect(url_for('settings.settings'))
 
     current = _get_active_branch()
     if target == current:
-        flash(f'Уже активна ветка «{target}».', 'info')
+        flash(f'Уже на ветке {target}.', 'info')
         return redirect(url_for('settings.settings'))
 
-    # Защита от двойного запуска
-    if os.path.exists(LOCK_FILE):
-        flash('Переключение уже выполняется, подождите.', 'warning')
-        return redirect(url_for('settings.settings'))
+    # Записываем lock
+    try:
+        open(LOCK_FILE, 'w').write('switching')
+    except Exception:
+        pass
 
-    # Создаём lock
-    with open(LOCK_FILE, "w") as f:
-        f.write("switching")
+    try:
+        # Сохраняем целевую ветку в _branch.txt
+        with open(BRANCH_FILE, 'w', encoding='utf-8') as f:
+            f.write(target)
 
-    # Логируем
-    db = get_db()
-    log_action(db, session['user_id'], 'branch_switch', None,
-               f'Переключение ветки: {current} → {target}')
-    db.commit()
-    db.close()
-
-    # Запускаем переключение в фоне — Flask успевает вернуть ответ
-    def _do_switch():
-        switcher = os.path.join(BASE_DIR, "branch_switcher.py")
-        subprocess.run(
-            [sys.executable, switcher, target],
+        # Запускаем _updater.py в фоне (скачает архив нужной ветки)
+        updater = os.path.join(BASE_DIR, '_updater.py')
+        subprocess.Popen(
+            [sys.executable, updater],
             cwd=BASE_DIR,
+            stdout=open(os.path.join(BASE_DIR, '_switch.log'), 'w', encoding='utf-8'),
+            stderr=subprocess.STDOUT,
         )
-        # После завершения _restart.flag уже создан → Flask сам остановится
-        # Посылаем себе сигнал завершения
-        import signal
-        os.kill(os.getpid(), signal.SIGTERM)
 
-    t = threading.Thread(target=_do_switch, daemon=True)
-    t.start()
+        # Создаём _restart.flag — run_server.py увидит его и вернёт exit(42)
+        # батник перезапустит сервер автоматически
+        with open(RESTART_FLAG, 'w') as f:
+            f.write('branch-switch')
 
-    branch_label = '🧪 DEV (экспериментальная)' if target == 'dev' else '✅ MAIN (стабильная)'
-    flash(
-        f'Переключение на {branch_label} запущено. '
-        f'Сервер перезапустится автоматически через несколько секунд...',
-        'info'
-    )
+    except Exception as e:
+        # Откатываем ветку при ошибке
+        with open(BRANCH_FILE, 'w', encoding='utf-8') as f:
+            f.write(current)
+        try:
+            os.remove(LOCK_FILE)
+        except Exception:
+            pass
+        flash(f'Ошибка при переключении: {e}', 'error')
+        return redirect(url_for('settings.settings'))
+
+    # Останавливаем Flask — run_server.py увидит _restart.flag → exit(42) → батник перезапустит
+    label = '🧪 DEV' if target == 'dev' else '✅ main'
+    flash(f'Переключение на {label}. Сервер перезапускается...', 'success')
+
+    # Даём Flask отправить ответ, потом завершаем процесс
+    import threading
+    def _shutdown():
+        import time
+        time.sleep(1.5)
+        os.kill(os.getpid(), 15)  # SIGTERM → run_server.py поймает и проверит _restart.flag
+    threading.Thread(target=_shutdown, daemon=True).start()
+
     return redirect(url_for('settings.settings'))
