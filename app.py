@@ -1,22 +1,22 @@
 # ╔══════════════════════════════════════════════════════════════╗
 # ║ app.py                                                       ║
-# ║ v2.4: investmap_bp зарегистрирован (конвертер инвестплощадок)║
+# ║ v2.5: lint-fix + can_export_full/can_import_full             ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 import os
-from flask import Flask, session
-import sqlite3, os, json
-from datetime import datetime, date, timedelta
+import sqlite3
+from datetime import timedelta
 
-from db import get_db, DB_PATH, BASE_DIR, UPLOADS_DIR, REPORTS_DIR
-from auth_utils import hash_pw, ADMIN_PERMISSIONS
+from flask import Flask, session
+
+from db import get_db, DB_PATH, BASE_DIR
+from auth_utils import hash_pw
 from changelog import CHANGELOG
 from spravochnik import LEGAL_FORMS_DEFAULT, DISTRICTS_DEFAULT, SOURCE_TYPES_DEFAULT
 
 app = Flask(__name__)
 
 # ─── SECRET_KEY: читаем из .env / переменной окружения, затем из _secret.key ───
-# Даже без .env ключ сохраняется между перезапусками — сессии не сбрасываются.
 import secrets as _secrets
 _KEY_FILE = os.path.join(BASE_DIR, '_secret.key')
 _env_key  = os.environ.get('SECRET_KEY')
@@ -38,8 +38,7 @@ else:
 app.config['PERMANENT_SESSION_LIFETIME']  = timedelta(minutes=15)
 app.config['SESSION_REFRESH_EACH_REQUEST'] = True
 
-# ─── Blueprints ───────────────────────────────────────────────────────────
-
+# ─── Blueprints (ранние — без init_db) ───────────────────────────────────────
 from phonebook_routes import phonebook_bp
 from search_routes    import search_bp
 app.register_blueprint(phonebook_bp)
@@ -63,6 +62,8 @@ CREATE TABLE IF NOT EXISTS users (
     can_delete           INTEGER DEFAULT 0,
     can_rollback         INTEGER DEFAULT 0,
     can_export           INTEGER DEFAULT 0,
+    can_export_full      INTEGER DEFAULT 0,
+    can_import_full      INTEGER DEFAULT 0,
     can_classifiers      INTEGER DEFAULT 0,
     can_users            INTEGER DEFAULT 0,
     can_view_all         INTEGER DEFAULT 0,
@@ -179,17 +180,17 @@ CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         if col not in cols:
             conn.execute(f"ALTER TABLE requests ADD COLUMN {col} {typ}")
 
-    # ── Миграция users (v2.0) ──────────────────────────────────────────
+    # ── Миграция users ──────────────────────────────────────────────────
     user_cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
     for col in ['can_create', 'can_edit_others', 'can_confirm', 'can_delete',
-                'can_rollback', 'can_export', 'can_classifiers', 'can_users',
-                'can_view_all', 'can_investmap']:
+                'can_rollback', 'can_export', 'can_export_full', 'can_import_full',
+                'can_classifiers', 'can_users', 'can_view_all', 'can_investmap']:
         if col not in user_cols:
             conn.execute(f"ALTER TABLE users ADD COLUMN {col} INTEGER DEFAULT 0")
     if 'must_change_password' not in user_cols:
         conn.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0")
 
-    # ── Миграция users (v2.2 — settings) ───────────────────────────────
+    # ── Миграция users (settings) ───────────────────────────────────────
     for col, definition in [
         ('email',               'TEXT DEFAULT NULL'),
         ('theme',               "TEXT DEFAULT 'light'"),
@@ -203,8 +204,9 @@ CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         conn.execute(
             "INSERT INTO users (username,password,full_name,role,"
             "can_create,can_edit_others,can_confirm,can_delete,"
-            "can_rollback,can_export,can_classifiers,can_users,can_view_all,can_investmap) "
-            "VALUES (?,?,?,?,1,1,1,1,1,1,1,1,1,1)",
+            "can_rollback,can_export,can_export_full,can_import_full,"
+            "can_classifiers,can_users,can_view_all,can_investmap) "
+            "VALUES (?,?,?,?,1,1,1,1,1,1,1,1,1,1,1,1)",
             ('admin', hash_pw('admin123'), 'Администратор', 'admin')
         )
 
@@ -249,17 +251,17 @@ def migrate_db():
         if col not in cols:
             conn.execute(f"ALTER TABLE requests ADD COLUMN {col} {typ}")
 
-    # ── users (v2.0) ──────────────────────────────────────────────────────────────
+    # ── users ──────────────────────────────────────────────────────────────────
     user_cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
     for col in ['can_create', 'can_edit_others', 'can_confirm', 'can_delete',
-                'can_rollback', 'can_export', 'can_classifiers', 'can_users',
-                'can_view_all', 'can_investmap']:
+                'can_rollback', 'can_export', 'can_export_full', 'can_import_full',
+                'can_classifiers', 'can_users', 'can_view_all', 'can_investmap']:
         if col not in user_cols:
             conn.execute(f"ALTER TABLE users ADD COLUMN {col} INTEGER DEFAULT 0")
     if 'must_change_password' not in user_cols:
         conn.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0")
 
-    # ── users (v2.2 — settings) ─────────────────────────────────────────────
+    # ── users (settings) ─────────────────────────────────────────────────────
     for col, definition in [
         ('email',               'TEXT DEFAULT NULL'),
         ('theme',               "TEXT DEFAULT 'light'"),
@@ -268,7 +270,7 @@ def migrate_db():
         if col not in user_cols:
             conn.execute(f"ALTER TABLE users ADD COLUMN {col} {definition}")
 
-    # ── login_log (v2.0) ──────────────────────────────────────────────────────────
+    # ── login_log ──────────────────────────────────────────────────────────────
     conn.executescript("""
 CREATE TABLE IF NOT EXISTS login_log (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -288,7 +290,7 @@ CREATE INDEX IF NOT EXISTS idx_ll_event ON login_log(event);
         WHERE role='employee' AND can_create=0
     """)
 
-    # activity_log (v2.0)
+    # activity_log
     conn.executescript("""
 CREATE TABLE IF NOT EXISTS activity_log (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -303,7 +305,7 @@ CREATE INDEX IF NOT EXISTS idx_al_request ON activity_log(request_id);
 CREATE INDEX IF NOT EXISTS idx_al_action  ON activity_log(action);
 """)
 
-    # phonebook_orgs (v2.1.0)
+    # phonebook_orgs
     conn.executescript("""
 CREATE TABLE IF NOT EXISTS phonebook_orgs (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -328,7 +330,6 @@ CREATE INDEX IF NOT EXISTS idx_pb_org  ON phonebook(org_id);
 CREATE INDEX IF NOT EXISTS idx_pb_name ON phonebook(full_name);
 """)
 
-    # ── phonebook source_type (v2.3) ──────────────────────────────────────────
     pb_cols = [r[1] for r in conn.execute("PRAGMA table_info(phonebook)").fetchall()]
     if 'source_type' not in pb_cols:
         conn.execute(
