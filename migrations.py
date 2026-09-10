@@ -565,6 +565,7 @@ def _migrate_investmap_rf_monitor_registry_tables(conn):
             "INTEGER NOT NULL DEFAULT 0",
         ),
         ("api_not_found_detected_at_utc", "TEXT"),
+        ("object_created_at", "TEXT"),
     )
 
     for column_name, column_type in card_columns_to_add:
@@ -581,6 +582,28 @@ def _migrate_investmap_rf_monitor_registry_tables(conn):
         ON investmap_rf_monitored_cards(
             api_not_found_pending_decision,
             is_active,
+            global_id
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+            idx_investmap_rf_monitored_cards_object_created_at
+        ON investmap_rf_monitored_cards(
+            object_created_at,
+            global_id
+        )
+        """
+    )
+
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+            idx_investmap_rf_registry_events_period_type
+        ON investmap_rf_monitor_registry_events(
+            occurred_at_utc,
+            event_type,
             global_id
         )
         """
