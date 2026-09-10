@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from io import BytesIO
 from typing import Any
 
@@ -67,6 +67,37 @@ def _parse_global_id(value: Any) -> int | None:
 
     return parsed if parsed > 0 else None
 
+def _parse_object_created_at(value: Any) -> str | None:
+    """Приводит дату создания из XLSX к формату YYYY-MM-DD."""
+    if value is None or isinstance(value, bool):
+        return None
+
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+
+    if isinstance(value, date):
+        return value.isoformat()
+
+    text = str(value).strip()
+    if not text:
+        return None
+
+    normalized = text.replace("T", " ").strip()
+
+    for fmt in (
+        "%d.%m.%Y",
+        "%d.%m.%Y %H:%M:%S",
+        "%d.%m.%Y %H:%M",
+        "%Y-%m-%d",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+    ):
+        try:
+            return datetime.strptime(normalized, fmt).date().isoformat()
+        except ValueError:
+            continue
+
+    return None
 
 def _append_event(
     conn,
@@ -474,6 +505,9 @@ def import_monitored_cards_xlsx(
         "non_free_rows": 0,
         "invalid_rows": 0,
         "duplicate_rows": 0,
+        "object_created_at_column_found": False,
+        "object_created_at_updated": 0,
+        "object_created_at_invalid": 0,
         "added": 0,
         "reactivated": 0,
         "deactivated": 0,
@@ -500,6 +534,10 @@ def import_monitored_cards_xlsx(
 
         global_id_index = header_positions.get("global_id")
         status_index = header_positions.get("статус площадки")
+        object_created_at_index = header_positions.get("дата создания")
+        report["object_created_at_column_found"] = (
+            object_created_at_index is not None
+        )
 
         missing_headers: list[str] = []
         if global_id_index is None:
@@ -522,7 +560,26 @@ def import_monitored_cards_xlsx(
             global_id_value = (
                 row[global_id_index] if global_id_index < len(row) else None
             )
-            status_value = row[status_index] if status_index < len(row) else None
+            status_value = (
+                row[status_index] if status_index < len(row) else None
+            )
+            object_created_at_value = (
+                row[object_created_at_index]
+                if object_created_at_index is not None
+                and object_created_at_index < len(row)
+                else None
+            )
+            object_created_at = _parse_object_created_at(
+                object_created_at_value
+            )
+
+            if (
+                object_created_at_index is not None
+                and object_created_at_value is not None
+                and str(object_created_at_value).strip()
+                and object_created_at is None
+            ):
+                report["object_created_at_invalid"] += 1
 
             global_id = _parse_global_id(global_id_value)
             if global_id is None:
@@ -564,7 +621,10 @@ def import_monitored_cards_xlsx(
 
             row_exists = conn.execute(
                 """
-                SELECT is_active, last_source_status
+                SELECT
+                    is_active,
+                    last_source_status,
+                    object_created_at
                 FROM investmap_rf_monitored_cards
                 WHERE global_id = ?
                 """,
@@ -583,9 +643,10 @@ def import_monitored_cards_xlsx(
                             source_filename,
                             imported_at_utc,
                             last_seen_import_at_utc,
-                            last_source_status
+                            last_source_status,
+                            object_created_at
                         )
-                        VALUES (?, 1, ?, ?, ?, ?)
+                        VALUES (?, 1, ?, ?, ?, ?, ?)
                         """,
                         (
                             global_id,
@@ -593,8 +654,12 @@ def import_monitored_cards_xlsx(
                             imported_at_utc,
                             imported_at_utc,
                             status,
+                            object_created_at,
                         ),
                     )
+
+                    if object_created_at is not None:
+                        report["object_created_at_updated"] += 1
                     _append_event(
                         conn,
                         global_id=global_id,
@@ -658,16 +723,28 @@ def import_monitored_cards_xlsx(
                 SET
                     source_filename = ?,
                     last_seen_import_at_utc = ?,
-                    last_source_status = ?
+                    last_source_status = ?,
+                    object_created_at = CASE
+                        WHEN ? IS NOT NULL THEN ?
+                        ELSE object_created_at
+                    END
                 WHERE global_id = ?
                 """,
                 (
                     normalized_filename,
                     imported_at_utc,
                     status,
+                    object_created_at,
+                    object_created_at,
                     global_id,
                 ),
             )
+
+            if object_created_at is not None:
+                report["object_created_at_updated"] += 1
+
+                if object_created_at is not None:
+                    report["object_created_at_updated"] += 1
 
             if previous_is_active == 1:
                 conn.execute(
